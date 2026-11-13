@@ -1,0 +1,11 @@
+[Unit]
+Description=KR run after market close (Mon-Fri 18:30 KST)
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 18:30:00 Asia/Seoul
+Persistent=true
+RandomizedDelaySec=120
+Unit=stock-screener-run@KR.service
+
+[Install]
+WantedBy=timers.target

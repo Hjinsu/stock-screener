@@ -1,0 +1,27 @@
+[Unit]
+Description=Stock screener dashboard (127.0.0.1:8765, SSH tunnel only)
+After=network-online.target mariadb.service
+Wants=network-online.target
+Requires=mariadb.service
+
+[Service]
+Type=simple
+User=screener
+Group=screener
+EnvironmentFile=/etc/stock-screener/screener.env
+WorkingDirectory=/var/lib/stock-screener
+ExecStart=/usr/bin/java -Dfile.encoding=UTF-8 -Xmx512m -jar /opt/stock-screener/current/screener.jar serve
+Restart=on-failure
+RestartSec=15
+# 보호 설정
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/stock-screener
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+
+[Install]
+WantedBy=multi-user.target

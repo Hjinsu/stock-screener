@@ -1,0 +1,12 @@
+# 비밀값·로컬 데이터는 저장소에 올리지 않는다
+env.local.ps1
+.env
+data/
+build/
+lib/
+screener.jar
+*.db
+*.db-wal
+*.db-shm
+*.log
+target/

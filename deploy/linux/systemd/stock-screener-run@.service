@@ -1,0 +1,20 @@
+[Unit]
+Description=Stock screener daily run (%i market, paper trading only)
+After=network-online.target mariadb.service
+Wants=network-online.target
+Requires=mariadb.service
+
+[Service]
+Type=oneshot
+User=screener
+Group=screener
+EnvironmentFile=/etc/stock-screener/screener.env
+WorkingDirectory=/var/lib/stock-screener
+ExecStart=/usr/bin/java -Dfile.encoding=UTF-8 -Xmx1g -jar /opt/stock-screener/current/screener.jar run --market %i
+TimeoutStartSec=3h
+Nice=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/stock-screener

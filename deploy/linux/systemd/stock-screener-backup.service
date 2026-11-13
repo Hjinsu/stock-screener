@@ -1,0 +1,8 @@
+[Unit]
+Description=Stock screener MariaDB backup + restore check
+After=mariadb.service
+Requires=mariadb.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/stock-screener-backup

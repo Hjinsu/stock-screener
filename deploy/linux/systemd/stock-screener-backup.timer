@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily MariaDB backup (03:30 KST)
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 Asia/Seoul
+Persistent=true
+Unit=stock-screener-backup.service
+
+[Install]
+WantedBy=timers.target

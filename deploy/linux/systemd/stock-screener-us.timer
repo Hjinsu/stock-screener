@@ -1,0 +1,11 @@
+[Unit]
+Description=US run after market close (Tue-Sat 07:00 KST)
+
+[Timer]
+OnCalendar=Tue..Sat *-*-* 07:00:00 Asia/Seoul
+Persistent=true
+RandomizedDelaySec=120
+Unit=stock-screener-run@US.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>주식 자동 선별</title>
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#ffffff; --ink:#1b1f24; --muted:#5d6672; --line:#e3e6ea; --soft:#eef1f4;
+  --accent:#2457c5; --accent-soft:#e7eefc; --good:#1f7a4d; --good-soft:#e5f4ec; --warn:#9a6400; --warn-soft:#fdf3dc;
+  --bad:#b4232a; --bad-soft:#fbe9ea; --info:#5b4fc4; --info-soft:#efedfc;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#111418; --panel:#181c21; --ink:#e7eaee; --muted:#9aa4b1; --line:#2a3038; --soft:#1f242b;
+    --accent:#7aa2ff; --accent-soft:#1d2a47; --good:#5cc68f; --good-soft:#15301f; --warn:#e3b45a; --warn-soft:#3a2d12;
+    --bad:#f07178; --bad-soft:#3d1a1d; --info:#a99cff; --info-soft:#26214a; }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 "Segoe UI","Malgun Gothic","Apple SD Gothic Neo",sans-serif}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:14px 20px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+header h1{font-size:17px;margin:0;font-weight:650}
+.badge{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:600;background:var(--soft);color:var(--muted);white-space:nowrap}
+.b-good{background:var(--good-soft);color:var(--good)} .b-warn{background:var(--warn-soft);color:var(--warn)}
+.b-bad{background:var(--bad-soft);color:var(--bad)} .b-info{background:var(--info-soft);color:var(--info)} .b-acc{background:var(--accent-soft);color:var(--accent)}
+nav{display:flex;gap:4px;flex-wrap:wrap;padding:8px 20px;background:var(--panel);border-bottom:1px solid var(--line)}
+nav button{border:0;background:none;color:var(--muted);padding:6px 12px;border-radius:8px;cursor:pointer;font:inherit}
+nav button.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
+main{padding:18px 20px;max-width:1400px;margin:0 auto}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;min-width:0}
+.card h2{font-size:15px;margin:0 0 10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.card h3{font-size:13px;margin:14px 0 6px;color:var(--muted);font-weight:600}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:3px 12px;font-size:13px}
+.kv div:nth-child(odd){color:var(--muted)}
+.big{font-size:30px;font-weight:700;font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)} .small{font-size:12px}
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{background:var(--soft);font-weight:600;color:var(--muted);white-space:nowrap;position:sticky;top:0}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.click{cursor:pointer} tr.click:hover td{background:var(--accent-soft)}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:var(--panel);color:var(--muted);padding:5px 12px;cursor:pointer;font:inherit}
+.seg button.on{background:var(--accent);color:#fff}
+button.act{border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:6px 12px;border-radius:8px;cursor:pointer;font:inherit}
+button.act:hover{border-color:var(--accent);color:var(--accent)}
+select,input[type=time]{font:inherit;padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink)}
+ul.plain{margin:4px 0;padding-left:18px} ul.plain li{margin:2px 0}
+.pos{color:var(--good)} .neg{color:var(--bad)}
+.drawer{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;z-index:10}
+.drawer.open{display:block}
+.drawer .panel{position:absolute;right:0;top:0;bottom:0;width:min(980px,100%);background:var(--bg);overflow-y:auto;padding:18px 20px;box-shadow:-8px 0 24px rgba(0,0,0,.2)}
+.close{float:right}
+pre{white-space:pre-wrap;word-break:break-word;font:12px/1.45 var(--mono);background:var(--soft);padding:10px;border-radius:8px;margin:0}
+.notice{border-left:3px solid var(--warn);background:var(--warn-soft);padding:8px 12px;border-radius:6px;font-size:13px;margin-bottom:12px}
+.alert{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;background:var(--panel)}
+.alert.unread{border-left:4px solid var(--accent)}
+.bar{height:6px;background:var(--soft);border-radius:4px;overflow:hidden;min-width:60px}
+.bar > i{display:block;height:100%;background:var(--accent)}
+.empty{padding:24px;text-align:center;color:var(--muted)}
+details summary{cursor:pointer;color:var(--muted)}
+@media (max-width:640px){ main{padding:12px 16px} header,nav{padding-left:16px;padding-right:16px} }
+</style>
+</head>
+<body>
+<header>
+  <h1>한국·미국 주식 자동 선별 <span id="mode" class="badge"></span></h1>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <span id="alertBadge" class="badge b-acc" style="cursor:pointer" onclick="go('alerts')"></span>
+    <span id="runBadge" class="badge"></span>
+    <button class="act" id="btnRun" onclick="trigger('ALL')">지금 실행(양국)</button>
+  </div>
+</header>
+<nav id="nav"></nav>
+<main id="main"><div class="empty">불러오는 중…</div></main>
+<footer style="padding:16px 20px;color:var(--muted);font-size:12px;max-width:1400px;margin:0 auto">출처: 한국거래소 통계정보(KRX OpenAPI), OpenDART, SEC EDGAR, Cboe, FINRA, Nasdaq Trader, Yahoo Finance·Naver 증권(비공식). 분석·모의 검증 전용 — 투자 권유·주문 기능 없음.</footer>
+<div class="drawer" id="drawer" onclick="if(event.target===this)closeDrawer()"><div class="panel" id="drawerBody"></div></div>
+
+<script>
+const TABS=[['overview','개요'],['mas','매집 의심(MAS)'],['ois','역발상(OIS)'],['msi','시장심리(MSI)'],['alerts','알림'],['tracking','추적'],['paper','모의매매'],['runs','실행 내역'],['settings','설정·규칙']];
+let state={tab:'overview',market:'KR',filter:'active',model:'MAS'};
+try{const s=JSON.parse(localStorage.getItem('scr-ui')||'{}');Object.assign(state,s)}catch(e){}
+const $=s=>document.querySelector(s);
+const esc=v=>v==null?'':String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pct=v=>v==null||isNaN(v)?'-':`<span class="${v>0?'pos':v<0?'neg':''}">${(v*100).toFixed(2)}%</span>`;
+const n1=v=>v==null?'-':(+v).toFixed(1);
+function money(m,v){if(v==null)return'-';const a=Math.abs(v);if(m==='KR'){return a>=1e12?(v/1e12).toFixed(2)+'조원':a>=1e8?(v/1e8).toFixed(0)+'억원':Math.round(v).toLocaleString()+'원'}return a>=1e9?'$'+(v/1e9).toFixed(1)+'B':a>=1e6?'$'+(v/1e6).toFixed(1)+'M':'$'+(+v).toFixed(2)}
+function price(m,v){if(v==null)return'-';return m==='KR'?Math.round(v).toLocaleString()+'원':'$'+(+v).toFixed(2)}
+async function api(p,opt){const r=await fetch(p,Object.assign({headers:{'X-Requested-With':'screener','Content-Type':'application/json'}},opt||{}));if(!r.ok)throw new Error(await r.text());return r.json()}
+function save(){try{localStorage.setItem('scr-ui',JSON.stringify({tab:state.tab,market:state.market,filter:state.filter}))}catch(e){}}
+function go(t){state.tab=t;save();render()}
+function setMarket(m){state.market=m;save();render()}
+function statusBadge(code,label){const good=['VERY_HIGH','HIGH','STRONG','EARLY','PRIORITY','INTEREST'],info=['WATCH','OBSERVE'],warn=['PENDING','WEAKENED'],bad=['INVALIDATED','BLOCKED','EXCLUDED_RISK'];
+  const c=good.includes(code)?'b-good':info.includes(code)?'b-info':warn.includes(code)?'b-warn':bad.includes(code)?'b-bad':'';return `<span class="badge ${c}">${esc(label||code)}</span>`}
+function runBadge(s){const c=s==='OK'?'b-good':s==='PARTIAL'?'b-warn':s==='RUNNING'?'b-acc':'b-bad';return `<span class="badge ${c}">${esc(s||'-')}</span>`}
+function marketSeg(){return `<div class="seg">${['KR','US'].map(m=>`<button class="${state.market===m?'on':''}" onclick="setMarket('${m}')">${m==='KR'?'한국':'미국'}</button>`).join('')}</div>`}
+
+let OV=null;
+async function header(){
+  OV=await api('/api/overview');
+  $('#mode').textContent=OV.mode==='demo'?'데모(합성 데이터)':'실데이터';
+  $('#mode').className='badge '+(OV.mode==='demo'?'b-warn':'b-good');
+  $('#alertBadge').textContent='읽지 않은 알림 '+OV.unreadAlerts;
+  $('#runBadge').textContent=OV.running?'실행 중…':'대기';
+  $('#runBadge').className='badge '+(OV.running?'b-acc':'');
+  $('#btnRun').style.display=OV.mode==='demo'?'none':'';
+  $('#nav').innerHTML=TABS.map(([k,l])=>`<button class="${state.tab===k?'on':''}" onclick="go('${k}')">${l}</button>`).join('');
+}
+async function render(){
+  try{await header();const f={overview,mas:()=>cands('MAS'),ois:()=>cands('OIS'),msi,alerts,tracking,paper,runs,settings}[state.tab]||overview;await f()}
+  catch(e){$('#main').innerHTML=`<div class="card"><b>오류</b><pre>${esc(e.message)}</pre></div>`}
+}
+
+function scanTable(sum){if(!sum)return'<div class="muted">요약 없음</div>';
+  const mf=sum.masFilter||{};const fb=mf.failedBy||{};const te=sum.typeExcluded||{};
+  return `<div class="kv">
+  <div>상장 목록 수집</div><div>${sum.listingsTotal??'-'}건 (보통주 ${sum.commonStocks??'-'})</div>
+  <div>유형 제외</div><div>${Object.entries(te).map(([k,v])=>esc(k)+' '+v).join(', ')||'-'}</div>
+  <div>시총 미확인</div><div>${sum.mcapUnknown??'-'}</div>
+  <div>일봉 요청/성공/실패</div><div>${sum.scanRequested??'-'} / ${sum.barsOk??'-'} / <b class="${sum.barsFailed>0?'neg':''}">${sum.barsFailed??'-'}</b></div>
+  <div>MAS 필터</div><div>평가 ${mf.evaluated??'-'} · 통과 ${mf.passed??'-'} · 미확정 ${mf.unconfirmed??'-'} · 탈락 ${Object.values(fb).reduce((a,b)=>a+b,0)}</div>
+  <div>탈락 사유</div><div class="small">${Object.entries(fb).map(([k,v])=>esc(k)+' '+v).join(' · ')||'-'}</div>
+  <div>OIS 유니버스</div><div>${sum.oisUniverse??'-'}종목 (점수 ${sum.oisScored??'-'})</div>
+  <div>수급/재무/업종</div><div>${sum.flowsOk??(sum.flows||'-')} / ${sum.fundamentalsOk??'-'}·${sum.fundamentalsRequested??'-'} / ${sum.sectorsOk??'-'}</div>
+  <div>공시 스캔 성공/실패</div><div>${sum.disclosuresOk??'-'} / <b class="${sum.disclosuresFailed>0?'neg':''}">${sum.disclosuresFailed??'-'}</b></div>
+  ${sum.limitApplied?`<div>검증 상한</div><div><span class="badge b-warn">--limit ${sum.limitApplied} (전체 스캔 아님)</span></div>`:''}
+  </div>${(sum.notes||[]).length?`<h3>메모</h3><ul class="plain small">${sum.notes.map(n=>`<li>${esc(n)}</li>`).join('')}</ul>`:''}`}
+function sourcesTable(src){if(!src)return'';const rows=Object.values(src);
+  return `<div class="tbl-wrap"><table><tr><th>공급원</th><th class="num">호출</th><th class="num">캐시</th><th class="num">실패</th><th>최근 오류 / 메모</th></tr>${rows.map(s=>`<tr><td>${esc(s.name)}${s.disabled?' <span class="badge b-warn">비활성</span>':''}</td><td class="num">${s.calls}</td><td class="num">${s.cacheHits}</td><td class="num ${s.failures>0?'neg':''}">${s.failures}</td><td class="small">${esc(s.lastError||'')}${s.note?'<div class="muted">'+esc(s.note)+'</div>':''}</td></tr>`).join('')}</table></div>`}
+function msiMini(m){if(!m)return'<div class="muted">MSI 기록 없음</div>';if(m.score==null)return`<div><span class="badge b-warn">미산출</span> <span class="small muted">${esc(m.reason||'')}</span></div>`;
+  return `<div style="display:flex;gap:14px;align-items:baseline;flex-wrap:wrap"><span class="big">${n1(m.score)}</span><span class="badge b-info">${esc(m.band)}</span>${m.provisional?'<span class="badge b-warn">잠정</span>':''}<span class="badge">신뢰도 ${esc(m.confidence)}</span></div>
+  <div class="small muted">전일 ${m.ch1??'-'} · 5일 ${m.ch5??'-'} · 20일 ${m.ch20??'-'} · ${esc(m.dynamic||'변화 상태 없음')} · W=${m.W}</div><div class="small">${esc(m.action||'')}</div>`}
+function counts(list){return (list||[]).map(r=>`${esc(r.status)} ${r.n}`).join(' · ')||'-'}
+
+async function overview(){
+  const mk=OV.markets;let h='';
+  if(OV.mode==='demo')h+=`<div class="notice">데모 모드: 합성 데이터(실제 시세 아님)로 실행한 결과입니다. 실데이터는 <code>serve</code>(데모 옵션 없이)로 확인하세요.</div>`;
+  h+='<div class="grid">';
+  for(const m of ['KR','US']){const x=mk[m]||{};const r=x.lastRun||{};const s=r.summary||{};
+    h+=`<div class="card"><h2>${m==='KR'?'한국':'미국'} 시장 ${runBadge(r.status)}</h2>
+    <div class="kv"><div>완료 거래일(기준일)</div><div><b>${esc(r.as_of||'-')}</b></div>
+    <div>확인 방법</div><div class="small">${esc(r.completed_day_note||'-')}</div>
+    <div>최근 실행</div><div>${esc(r.started_at||'-')} → ${esc(r.finished_at||'진행/미완료')}</div>
+    <div>마지막 정상 수집</div><div>${esc(x.lastSuccess?x.lastSuccess.finished_at+' (기준일 '+x.lastSuccess.as_of+')':'없음')}</div>
+    ${r.error?`<div>오류</div><div class="neg small">${esc(r.error)}</div>`:''}
+    <div>MAS 상태</div><div class="small">${counts(x.masCounts)}</div><div>OIS 상태</div><div class="small">${counts(x.oisCounts)}</div></div>
+    <h3>${m==='KR'?'KR':'US'}-MSI (MAS·OIS와 합산하지 않음)</h3>${msiMini(x.msi)}
+    <h3>실제 스캔 범위</h3>${scanTable(s)}
+    <h3>공급원별 상태</h3>${sourcesTable(r.sources)}</div>`}
+  h+='</div>';$('#main').innerHTML=h}
+
+const MAS_GROUPS={active:['VERY_HIGH','HIGH','STRONG','EARLY','WATCH','WEAKENED','PENDING','INVALIDATED','BLOCKED'],cand:['VERY_HIGH','HIGH','STRONG','EARLY','WATCH'],pending:['PENDING'],invalid:['INVALIDATED','BLOCKED','WEAKENED'],all:null};
+const OIS_GROUPS={active:['PRIORITY','INTEREST','OBSERVE','PENDING','EXCLUDED_RISK'],cand:['PRIORITY','INTEREST','OBSERVE'],pending:['PENDING'],invalid:['EXCLUDED_RISK'],all:null};
+async function cands(model){
+  state.model=model;const rows=await api(`/api/candidates?market=${state.market}&model=${model}`);
+  const groups=model==='MAS'?MAS_GROUPS:OIS_GROUPS;const g=groups[state.filter];const list=g?rows.filter(r=>g.includes(r.status)):rows;
+  const fl=[['active','후보·대기·무효 전체'],['cand','후보·관찰'],['pending','확인 대기'],['invalid',model==='MAS'?'약화·무효화·차단':'위험 제외'],['all','전체(비후보 포함)']];
+  let h=`<div class="toolbar">${marketSeg()}<div class="seg">${fl.map(([k,l])=>`<button class="${state.filter===k?'on':''}" onclick="state.filter='${k}';save();render()">${l}</button>`).join('')}</div>
+  <span class="muted small">기준일 ${esc(rows[0]?.as_of||'-')} · ${list.length}/${rows.length}종목 · 점수 표기: 확인 S / 평가 배점 W, 가능 범위 S~S+100−W</span></div>`;
+  if(model==='MAS')h+=`<div class="notice small">매집 '의심' 패턴 탐지 결과이며 실제 매집 여부를 확정하지 않습니다. ${state.market==='US'?'미국은 종목별 투자자 순매수 직접 자료가 없어 수급 25점이 미평가(13F·ATS는 간접 자료로만 표시)입니다.':'연기금 세부 수급(5점)·사업 경쟁력(3점)은 원천 미제공으로 미평가입니다.'}</div>`;
+  else h+=`<div class="notice small">OIS는 투자 후보 조건 충족 정도이며 수익률·승률이 아닙니다. MSI는 시나리오 참고용이며 합산하지 않습니다.</div>`;
+  if(!list.length){h+='<div class="card empty">해당 상태의 종목이 없습니다.</div>';$('#main').innerHTML=h;return}
+  h+=`<div class="tbl-wrap"><table><tr><th>종목</th><th>상태</th><th class="num">확인 S/W</th><th class="num">가능 범위</th><th class="num">커버리지</th><th>신뢰도</th>${model==='MAS'?'<th class="num">유효 영역</th>':'<th class="num">60일 낙폭</th>'}<th class="num">20일</th><th class="num">60일</th><th class="num">시총</th><th class="num">근거/반대/누락</th>${model==='OIS'?'<th>하락 원인 구분</th>':''}</tr>`;
+  for(const r of list){h+=`<tr class="click" onclick="detail('${model}','${state.market}','${esc(r.symbol)}','${esc(r.as_of)}')">
+    <td><b>${esc(r.name)}</b><div class="small muted">${esc(r.symbol)} · ${esc(r.board||'')}</div></td>
+    <td>${statusBadge(r.status,r.statusLabel)}<div class="small muted">${esc(r.qualifier||'')}</div></td>
+    <td class="num"><b>${n1(r.s)}</b> / ${n1(r.w)}</td><td class="num">${n1(r.s)}~${n1(r.range_high)}</td>
+    <td class="num">${n1(r.coverage)}%</td><td><span class="badge">${esc(r.confidence||'-')}</span></td>
+    ${model==='MAS'?`<td class="num">${r.validAreas??'-'}</td>`:`<td class="num">${pct(r.drawdown60)}</td>`}
+    <td class="num">${pct(r.ret20)}</td><td class="num">${pct(r.ret60)}</td><td class="num">${money(state.market,r.marketCap)}</td>
+    <td class="num"><span class="pos">${r.pros??0}</span> / <span class="neg">${r.cons??0}</span> / <span class="muted">${r.missing??0}</span></td>
+    ${model==='OIS'?`<td class="small">${esc(r.declineType||'')}</td>`:''}</tr>`}
+  h+='</table></div>';$('#main').innerHTML=h}
+
+async function detail(model,market,sym,asOf){
+  const d=await api(`/api/score?model=${model}&market=${market}&symbol=${encodeURIComponent(sym)}&asOf=${asOf}`);const c=d.card;
+  if(!c){$('#drawerBody').innerHTML='<div class="card">상세 없음(오래된 비후보 점수는 요약만 보관)</div>';$('#drawer').classList.add('open');return}
+  const i=c.info||{};let h=`<button class="act close" onclick="closeDrawer()">닫기</button>
+  <h2 style="margin:0 0 4px">${esc(c.name)} <span class="muted">${esc(c.symbol)}</span></h2>
+  <div class="toolbar">${statusBadge(c.status,c.statusLabel)}<span class="badge">${esc(model)}</span><span class="badge">${esc(c.gradeQualifier)}</span><span class="badge">신뢰도 ${esc(c.confidence)}</span><span class="badge">기준일 ${esc(c.asOf)}</span></div>
+  <div class="card"><div class="kv"><div>점수</div><div><b>${esc(c.display)}</b></div><div>상태 사유</div><div>${esc(c.statusReason)}</div>
+  <div>가격</div><div>${price(market,i.price)} (최근 봉 ${esc(i.lastBarDate)})</div><div>20일/60일</div><div>${pct(i.ret20)} / ${pct(i.ret60)}</div>
+  <div>시총</div><div>${money(market,i.marketCap)} <span class="small muted">${esc(i.mcapSource||'')}</span></div>
+  ${i.declineType?`<div>하락 원인 구분</div><div>${esc(i.declineType)}</div>`:''}${i.msiRef?`<div>시장심리 참고</div><div>${esc(i.msiRef)}</div>`:''}
+  ${i.confidenceNote?`<div>신뢰도 메모</div><div>${esc(i.confidenceNote)}</div>`:''}<div>규칙 버전</div><div class="small">${esc(c.ruleVersion)}</div></div></div>`;
+  h+=`<div class="grid" style="margin-top:12px"><div class="card"><h2>근거</h2><ul class="plain">${(c.pros||[]).map(x=>`<li>${esc(x)}</li>`).join('')||'<li class="muted">없음</li>'}</ul></div>
+  <div class="card"><h2>반대 근거·위험</h2><ul class="plain">${(c.cons||[]).map(x=>`<li>${esc(x)}</li>`).join('')||'<li class="muted">없음</li>'}</ul></div></div>`;
+  h+=`<div class="card" style="margin-top:12px"><h2>점수 산출 항목</h2><div class="tbl-wrap"><table><tr><th>영역</th><th>항목</th><th class="num">점수/배점</th><th>관측값</th><th>적용 기준</th><th>출처·기준일</th></tr>
+  ${c.items.map(t=>`<tr><td class="small">${esc(t.area)}</td><td>${esc(t.name)}</td><td class="num">${t.grade==null?'<span class="badge b-warn">미평가</span>':n1(t.points)+' / '+t.max}</td>
+   <td class="small">${esc(t.observed||'')}${t.note?`<div class="muted">${esc(t.note)}</div>`:''}${t.substitute?' <span class="badge b-info">대체·근사</span>':''}</td>
+   <td class="small muted">${esc(t.criterion)}</td><td class="small">${esc(t.source||'')}<div class="muted">${esc(t.asOf||'-')}${t.delayed?' <span class="badge b-bad">지연</span>':''}</div></td></tr>`).join('')}</table></div>
+  <h3>영역 요약</h3><div class="tbl-wrap"><table><tr><th>영역</th><th class="num">배점</th><th class="num">평가 배점</th><th class="num">획득</th><th>유효 신호</th></tr>${Object.entries(c.areas).map(([k,a])=>`<tr><td>${esc(k)}</td><td class="num">${a.max}</td><td class="num">${a.evaluatedMax}</td><td class="num">${a.points}</td><td>${a.valid?'<span class="badge b-good">예</span>':'-'}</td></tr>`).join('')}</table></div></div>`;
+  if((c.filters||[]).length)h+=`<div class="card" style="margin-top:12px"><h2>신규 후보 필터</h2><div class="tbl-wrap"><table><tr><th>필터</th><th>기준</th><th>관측</th><th>결과</th></tr>${c.filters.map(f=>`<tr><td>${esc(f.name)}</td><td class="small">${esc(f.criterion)}</td><td class="small">${esc(f.observed)}</td><td>${f.result==='PASS'?'<span class="badge b-good">통과</span>':f.result==='FAIL'?'<span class="badge b-bad">탈락</span>':'<span class="badge b-warn">미확정</span>'}</td></tr>`).join('')}</table></div></div>`;
+  h+=`<div class="card" style="margin-top:12px"><h2>필수 재무·공시 검증</h2><div class="tbl-wrap"><table><tr><th>항목</th><th>상태</th><th>내용</th><th>출처</th></tr>${(c.mandatory||[]).map(f=>`<tr><td>${esc(f.name)}</td><td>${f.status==='CONFIRMED'?'<span class="badge b-good">확인</span>':f.status==='BLOCK'||f.status==='FAIL'?'<span class="badge b-bad">'+esc(f.status)+'</span>':'<span class="badge b-warn">'+esc(f.status)+'</span>'}</td><td class="small">${esc(f.detail)}</td><td class="small">${esc(f.source)}</td></tr>`).join('')}</table></div></div>`;
+  h+=`<div class="card" style="margin-top:12px"><h2>누락·미평가 데이터</h2><ul class="plain small">${(c.missing||[]).map(x=>`<li>${esc(x)}</li>`).join('')||'<li class="muted">없음</li>'}</ul>
+  ${(c.indirect||[]).length?`<h3>간접 자료(점수 미반영)</h3><ul class="plain small">${c.indirect.map(x=>`<li><b>${esc(x.name)}</b>: ${esc(x.value)}</li>`).join('')}</ul>`:''}
+  <h3>다음 확인 사항</h3><ul class="plain small">${(c.nextChecks||[]).map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`;
+  if(i.scenario)h+=`<div class="card" style="margin-top:12px"><h2>분할 진입 시나리오(원본 02, 보고용 — 주문 아님)</h2><div class="tbl-wrap"><table><tr><th>단계</th><th class="num">비중</th><th>조건</th><th>충족</th><th>관측</th></tr>${i.scenario.map(s=>`<tr><td>${s.stage}차</td><td class="num">${s.weightPct}%</td><td>${esc(s.condition)}</td><td>${s.met==null?'<span class="badge b-warn">판단 불가</span>':s.met?'<span class="badge b-good">충족</span>':'<span class="badge">미충족</span>'}</td><td class="small">${esc(s.observed)}</td></tr>`).join('')}</table></div><p class="small muted">${esc(i.takeProfitRule||'')}</p></div>`;
+  h+=`<div class="grid" style="margin-top:12px"><div class="card"><h2>상태 전환 이력</h2>${(d.transitions||[]).length?`<table>${d.transitions.map(t=>`<tr><td class="small">${esc(t.as_of)}</td><td class="small">${esc(t.from_state)} → <b>${esc(t.to_state)}</b></td><td class="num small">${n1(t.s)}</td></tr>`).join('')}</table>`:'<div class="muted">없음</div>'}</div>
+  <div class="card"><h2>추적</h2>${trackHtml(d.tracking||[],market)}</div></div>`;
+  $('#drawerBody').innerHTML=h;$('#drawer').classList.add('open')}
+function closeDrawer(){$('#drawer').classList.remove('open')}
+function trackHtml(list,market){if(!list.length)return'<div class="muted">추적 기록 없음</div>';return list.map(t=>`<div class="small" style="margin-bottom:8px"><b>${esc(t.detect_date)}</b> 탐지 (${price(market,t.detect_close)}, ${n1(t.detect_score)}점, ${esc(t.detect_state)}) · ${t.status==='ACTIVE'?'<span class="badge b-acc">추적 중</span>':'<span class="badge">종료</span>'}${t.invalid_reason?' <span class="badge b-bad">'+esc(t.invalid_reason)+'</span>':''}
+  <table style="margin-top:4px"><tr><th>기간</th><th class="num">수익률</th><th class="num">MFE</th><th class="num">MAE</th><th class="num">시장 초과</th><th class="num">업종 초과</th><th class="num">당시 점수</th></tr>${(t.checkpoints||[]).map(c=>`<tr><td>${c.horizon}일 (${esc(c.date)})</td><td class="num">${pct(c.ret)}</td><td class="num">${pct(c.mfe)}${c.hit15?' ≥15%':c.hit10?' ≥10%':''}</td><td class="num">${pct(c.mae)}</td><td class="num">${pct(c.excess)}</td><td class="num">${pct(c.sector_excess)}</td><td class="num">${n1(c.score_at)}</td></tr>`).join('')||'<tr><td colspan=7 class="muted">5거래일 경과 전</td></tr>'}</table></div>`).join('')}
+
+async function msi(){const d=await api('/api/msi?market='+state.market);const m=d.latest;
+  let h=`<div class="toolbar">${marketSeg()}<span class="muted small">${state.market==='KR'?'KR':'US'}-MSI — 직전 252거래일(최소 120개) 백분위 정규화, 영역 가중합/W</span></div>`;
+  if(!m){$('#main').innerHTML=h+'<div class="card empty">MSI 기록 없음</div>';return}
+  h+=`<div class="grid"><div class="card"><h2>${esc(m.name)} · 기준일 ${esc(m.asOf)}</h2>${msiMini(m)}${m.provisionalReason?`<div class="small muted" style="margin-top:6px">잠정 사유: ${esc(m.provisionalReason)}</div>`:''}
+  ${spark(d.history)}</div><div class="card"><h2>영역</h2><table><tr><th>영역</th><th class="num">가중치</th><th class="num">점수</th></tr>${(m.areas||[]).map(a=>`<tr><td>${esc(a.area)}</td><td class="num">${a.weight}</td><td class="num">${a.evaluated?n1(a.score):'<span class="badge b-warn">미평가</span>'}</td></tr>`).join('')}</table></div></div>
+  <div class="card" style="margin-top:12px"><h2>지표</h2><div class="tbl-wrap"><table><tr><th>영역</th><th>지표</th><th class="num">기준일 값</th><th class="num">방향</th><th class="num">점수</th><th class="num">비교값 수</th><th>출처</th></tr>${(m.indicators||[]).map(x=>`<tr><td class="small">${esc(x.area)}</td><td>${esc(x.name)}${x.substitute?' <span class="badge b-info">대체</span>':''}</td><td class="num">${x.value==null?'-':(+x.value).toFixed(4)}</td><td class="num">${esc(x.direction)}</td><td class="num">${x.score==null?'<span class="badge b-warn">미산출</span>':n1(x.score)}</td><td class="num">${x.comparisons}</td><td class="small">${esc(x.source)}${x.note?'<div class="muted">'+esc(x.note)+'</div>':''}</td></tr>`).join('')}</table></div>
+  <h3>메모·미확보 항목</h3><ul class="plain small">${(m.notes||[]).map(n=>`<li>${esc(n)}</li>`).join('')}</ul></div>`;
+  const nw=d.news||[];
+  h+=`<div class="card" style="margin-top:12px"><h2>뉴스 심리(NAVER API HUB)</h2>${nw.length?`<div class="tbl-wrap"><table><tr><th>기준일</th><th>상태</th><th class="num">점수</th><th class="num">수집/유지</th><th class="num">중복/광고/창 밖</th><th class="num">독립 출처</th><th>7단계 분포</th><th class="num">증가율</th><th class="num">강도</th><th>창·수집 시각</th></tr>${nw.map(x=>{let lv={};try{lv=JSON.parse(x.levels_json||'{}')}catch(e){}return `<tr><td>${esc(x.date)}</td><td>${x.status==='OK'?'<span class="badge b-good">산출</span>':'<span class="badge b-warn">미평가</span>'}<div class="small muted">${esc(x.note)}</div></td><td class="num">${x.score==null?'-':n1(x.score)}${x.raw_score!=null&&x.score==null?'<div class="small muted">참고 '+n1(x.raw_score)+'</div>':''}</td><td class="num">${x.n_raw}/${x.n_kept}</td><td class="num">${x.n_dup}/${x.n_ads}/${x.n_outside}</td><td class="num">${x.outlets}</td><td class="small">${Object.entries(lv).map(([k,v])=>esc(k)+' '+v).join(' · ')}</td><td class="num">${pct(x.growth)}</td><td class="num">${pct(x.intensity)}</td><td class="small muted">${esc(x.window_from)} ~ ${esc(x.window_to)}<div>${esc(x.fetched_at)} · ${esc(x.queries)}</div></td></tr>`}).join('')}</table></div><p class="small muted">${esc(nw[0].rule_version)}. 키워드 규칙 기반 초기 분류로 풍자·반어는 판별하지 못합니다. 커뮤니티 게시물은 수집하지 않습니다.</p>`:'<div class="muted">수집 기록 없음(NAVER API HUB 키 미설정 또는 데모)</div>'}</div>`;
+  $('#main').innerHTML=h}
+function spark(hist){const p=(hist||[]).filter(x=>x.score!=null).slice().reverse();if(p.length<2)return'';const W=520,H=90;
+  const xs=i=>8+i*(W-16)/(p.length-1),ys=v=>H-8-(v/100)*(H-16);
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;margin-top:10px" role="img" aria-label="MSI 추이"><rect x="0" y="${ys(30)}" width="${W}" height="${ys(0)-ys(30)}" fill="var(--bad-soft)"/><rect x="0" y="${ys(100)}" width="${W}" height="${ys(76)-ys(100)}" fill="var(--warn-soft)"/>
+  <polyline fill="none" stroke="var(--accent)" stroke-width="2" points="${p.map((x,i)=>xs(i)+','+ys(x.score)).join(' ')}"/><text x="8" y="12" font-size="11" fill="var(--muted)">${esc(p[0].as_of)} ~ ${esc(p[p.length-1].as_of)} (저장된 기준일)</text></svg>`}
+
+async function alerts(){const a=await api('/api/alerts');
+  let h=`<div class="toolbar"><button class="act" onclick="readAll()">모두 읽음</button><span class="muted small">상태가 바뀔 때만 생성되며 같은 기준일·유형은 한 번만 기록됩니다.</span></div>`;
+  if(!a.length){$('#main').innerHTML=h+'<div class="card empty">알림 없음</div>';return}
+  h+=a.map(x=>{let b={};try{b=JSON.parse(x.body_json||'{}')}catch(e){}return `<div class="alert ${x.is_read?'':'unread'}"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><div><span class="badge b-acc">${esc(x.type)}</span> <b>${esc(x.title)}</b></div><div class="small muted">${esc(x.created_at)} · 기준일 ${esc(x.as_of)} ${x.is_read?'':`<button class="act" onclick="readOne(${x.id})">읽음</button>`}</div></div>
+  <details><summary class="small">내용</summary><div class="kv small" style="margin-top:6px">${Object.entries(b).map(([k,v])=>`<div>${esc(k)}</div><div>${Array.isArray(v)?'<ul class="plain">'+v.map(t=>'<li>'+esc(typeof t==='object'?JSON.stringify(t):t)+'</li>').join('')+'</ul>':esc(typeof v==='object'?JSON.stringify(v):v)}</div>`).join('')}</div></details>
+  ${x.model!=='MSI'&&x.model!=='SYSTEM'?`<button class="act small" style="margin-top:6px" onclick="detail('${x.model}','${x.market}','${esc(x.symbol)}','${esc(x.as_of)}')">점수 근거 보기</button>`:''}</div>`}).join('');
+  $('#main').innerHTML=h}
+async function readOne(id){await api('/api/alerts/read?id='+id,{method:'POST'});render()}
+async function readAll(){await api('/api/alerts/read',{method:'POST'});render()}
+
+async function tracking(){const model=state.model||'MAS';const list=await api(`/api/tracking?market=${state.market}&model=${model}`);
+  let h=`<div class="toolbar">${marketSeg()}<div class="seg">${['MAS','OIS'].map(m=>`<button class="${model===m?'on':''}" onclick="state.model='${m}';render()">${m}</button>`).join('')}</div><span class="muted small">최초 탐지 종가 기준 5·10·20·40·60거래일(모의 검증). 체크포인트는 해당 시점까지의 자료만 사용.</span></div>`;
+  if(!list.length){$('#main').innerHTML=h+'<div class="card empty">추적 중인 후보 없음</div>';return}
+  h+=`<div class="tbl-wrap"><table><tr><th>종목</th><th>탐지일</th><th class="num">탐지 점수</th><th>상태</th>${[5,10,20,40,60].map(k=>`<th class="num">${k}일</th>`).join('')}<th class="num">최대 MFE</th><th class="num">최저 MAE</th><th>무효화/종료</th></tr>`;
+  for(const t of list){const cp={};(t.checkpoints||[]).forEach(c=>cp[c.horizon]=c);const last=(t.checkpoints||[]).slice(-1)[0];
+    h+=`<tr class="click" onclick="detail('${model}','${state.market}','${esc(t.symbol)}','')"><td><b>${esc(t.name)}</b><div class="small muted">${esc(t.symbol)}</div></td><td>${esc(t.detect_date)}</td><td class="num">${n1(t.detect_score)}</td><td>${t.status==='ACTIVE'?'<span class="badge b-acc">추적 중</span>':'<span class="badge">종료</span>'}</td>
+    ${[5,10,20,40,60].map(k=>`<td class="num">${cp[k]?pct(cp[k].ret)+`<div class="small muted">초과 ${pct(cp[k].excess).replace(/<[^>]+>/g,'')}</div>`:'<span class="muted">-</span>'}</td>`).join('')}
+    <td class="num">${last?pct(last.mfe):'-'}</td><td class="num">${last?pct(last.mae):'-'}</td><td class="small">${esc(t.invalid_reason||t.end_reason||'')}</td></tr>`}
+  h+='</table></div>';$('#main').innerHTML=h}
+
+
+async function paper(){const d=await api('/api/paper?market='+state.market);const m=state.market;const a=d.account;
+  let h=`<div class="toolbar">${marketSeg()}<span class="muted small">역발상(OIS) 후보 기반 가상 계좌 — 실거래 연결 없음. 확정장 신호 → 다음 거래일 시가 모의 체결.</span></div>
+  <div class="notice small">${esc(d.liquidityAssumption)}. 체결일 전체 거래량은 사후 분석용이며 체결 판정에 쓰지 않습니다. 동시호가 체결량·호가·분봉은 무료 공급원 미제공으로 결측입니다.</div>`;
+  if(!a){$('#main').innerHTML=h+'<div class="card empty">아직 모의 계좌가 없습니다(첫 실행 시 생성).</div>';return}
+  const eq=d.equity||[];const last=eq[eq.length-1]||{};const ret=last.equity&&a.start_cash?last.equity/last.deposits_cum-1:null;
+  h+=`<div class="grid"><div class="card"><h2>${esc(a.account)} <span class="badge">${esc(a.mode)}</span><span class="badge">${esc(a.strategy_version)}</span></h2><div class="kv">
+  <div>평가일</div><div>${esc(last.date||'-')}</div><div>총자산</div><div><b>${money(m,last.equity)}</b> (누적 ${pct(ret)})</div>
+  <div>현금</div><div>${money(m,last.cash)}</div><div>보유 평가액</div><div>${money(m,last.positions_value)}</div>
+  <div>실현 손익</div><div>${money(m,last.realized_cum)}</div><div>미실현 손익</div><div>${money(m,last.unrealized)}</div>
+  <div>입금 누계</div><div>${money(m,last.deposits_cum)}</div>${m==='US'?`<div>원화 환산</div><div>${last.equity_krw==null?'<span class="badge b-warn">환율 결측</span>':money('KR',last.equity_krw)+' <span class="small muted">(USD/KRW '+n1(last.fx_rate)+', '+esc(last.fx_date)+')</span>'}</div>`:''}
+  <div>벤치마크</div><div>${esc(last.benchmark||'')} ${last.bench_close==null?'-':n1(last.bench_close)}</div></div>
+  <p class="small muted">${esc(d.strategy)}</p></div>
+  <div class="card"><h2>CSV 내보내기</h2><div class="small muted">실행 ID·모드·전략 버전·신호/주문/체결 ID로 연결됩니다.</div><ul class="plain small">${d.csvTables.map(t=>`<li><a href="/api/paper/csv?table=${t}">${t}.csv</a></li>`).join('')}</ul></div></div>`;
+  h+=`<div class="card" style="margin-top:12px"><h2>보유</h2>${(d.positions||[]).length?`<div class="tbl-wrap"><table><tr><th>종목</th><th class="num">수량</th><th class="num">평균단가</th><th class="num">최근 종가</th><th class="num">평가손익률</th><th>진입 단계</th><th>청산 실행</th></tr>${d.positions.map(p=>`<tr><td><b>${esc(p.name)}</b><div class="small muted">${esc(p.symbol)}</div></td><td class="num">${p.qty}</td><td class="num">${price(m,p.avg_cost)}</td><td class="num">${price(m,p.mark_price)}<div class="small muted">${esc(p.mark_date||'')}</div></td><td class="num">${p.mark_price?pct(p.mark_price/p.avg_cost-1):'-'}</td><td>${esc(p.stages)}</td><td class="small">${esc(p.exits||'')}</td></tr>`).join('')}</table></div>`:'<div class="muted">보유 없음</div>'}</div>`;
+  h+=`<div class="card" style="margin-top:12px"><h2>주문(체결·미체결·대기)</h2>${(d.orders||[]).length?`<div class="tbl-wrap"><table><tr><th>ID</th><th>신호일</th><th>체결 목표일</th><th>종목</th><th>구분</th><th class="num">계획</th><th>상태</th><th>사유·근거</th></tr>${d.orders.map(o=>`<tr><td>${o.id}<div class="small muted">신호 ${o.signal_id}</div></td><td>${esc(o.signal_date)}</td><td>${esc(o.target_date||'-')}</td><td>${esc(o.name)}<div class="small muted">${esc(o.symbol)}</div></td><td>${esc(o.side)} ${esc(o.action)}</td><td class="num">${o.planned_amount!=null?money(m,o.planned_amount):(o.planned_qty+'주')}</td><td>${o.status==='FILLED'?'<span class="badge b-good">체결</span>':o.status==='UNFILLED'?'<span class="badge b-bad">미체결</span>':'<span class="badge b-acc">대기</span>'}</td><td class="small">${esc(o.status_reason)}<div class="muted">${esc(o.signal_reason||'')}</div></td></tr>`).join('')}</table></div>`:'<div class="muted">주문 없음 — 진입 조건(MSI 극단 공포·낙폭 등)이 충족되지 않으면 주문이 생성되지 않습니다.</div>'}</div>`;
+  h+=`<div class="card" style="margin-top:12px"><h2>체결 상세(체결 시점 데이터)</h2>${(d.fills||[]).length?`<div class="tbl-wrap"><table><tr><th>체결일</th><th>종목</th><th>구분</th><th class="num">전일 종가</th><th class="num">기준 시가</th><th class="num">시가 갭</th><th class="num">체결가</th><th class="num">수량</th><th class="num">수수료+세금</th><th class="num">슬리피지</th><th class="num">실현손익</th><th class="num">참여율(사후)</th><th>동시호가·호가·분봉</th></tr>${d.fills.map(f=>`<tr><td>${esc(f.fill_date)}<div class="small muted">체결 ${f.id}·주문 ${f.order_id}</div></td><td>${esc(f.name)}</td><td>${esc(f.side)} ${f.stage?f.stage+'차':''}</td><td class="num">${price(m,f.prev_close)}</td><td class="num">${price(m,f.ref_open)}</td><td class="num">${pct(f.gap)}</td><td class="num">${price(m,f.fill_price)}</td><td class="num">${f.qty}</td><td class="num">${money(m,(f.fee||0)+(f.tax||0))}</td><td class="num">${money(m,f.slippage_cost)}</td><td class="num">${f.side==='SELL'?money(m,f.realized_pnl):'-'}</td><td class="num">${f.participation_day==null?'-':(f.participation_day*100).toFixed(4)+'%'}<div class="small muted">${esc(f.participation_window||'')}</div></td><td class="small muted">${f.auction_volume==null&&f.bid==null&&f.vol_1m==null?'결측(미제공)':'있음'}</td></tr>`).join('')}</table></div>`:'<div class="muted">체결 없음</div>'}</div>`;
+  h+=`<div class="card" style="margin-top:12px"><h2>보류(필수 데이터 부족)</h2>${(d.deferred||[]).length?`<div class="tbl-wrap"><table><tr><th>신호일</th><th>종목</th><th>단계</th><th>사유</th></tr>${d.deferred.map(x=>`<tr><td>${esc(x.signal_date)}</td><td>${esc(x.name)}<div class="small muted">${esc(x.symbol)}</div></td><td>${esc(x.action)}</td><td class="small">${esc(x.reason)}</td></tr>`).join('')}</table></div>`:'<div class="muted">보류 없음</div>'}</div>`;
+  h+=`<div class="card" style="margin-top:12px"><h2>구간별 성과(비용 차감 후, 사후 평가)</h2>${(d.performance||[]).length?`<div class="tbl-wrap"><table><tr><th>구분</th><th>구간</th><th class="num">표본</th><th class="num">평균</th><th class="num">중앙값</th><th class="num">상승 비율</th></tr>${d.performance.map(r=>`<tr><td>${esc(r.dimension)}</td><td>${esc(r.bucket)}</td><td class="num">${r.n}${r.n<30?' <span class="badge b-warn">소표본</span>':''}</td><td class="num">${pct(r.mean_net_ret)}</td><td class="num">${pct(r.median_net_ret)}</td><td class="num">${pct(r.win_rate)}</td></tr>`).join('')}</table></div>`:'<div class="muted">매수 체결 표본 없음</div>'}</div>`;
+  h+=`<div class="card" style="margin-top:12px"><h2>일별 평가(거래 없는 날 포함)</h2><div class="tbl-wrap" style="max-height:360px;overflow:auto"><table><tr><th>일자</th><th class="num">총자산</th><th class="num">현금</th><th class="num">보유</th><th class="num">체결</th><th class="num">미체결</th><th class="num">보류</th><th class="num">벤치마크</th><th>비고</th></tr>${eq.slice().reverse().map(e=>`<tr><td>${esc(e.date)}</td><td class="num">${money(m,e.equity)}</td><td class="num">${money(m,e.cash)}</td><td class="num">${money(m,e.positions_value)}</td><td class="num">${e.n_fills}</td><td class="num">${e.n_unfilled}</td><td class="num">${e.n_deferred}</td><td class="num">${e.bench_close==null?'-':n1(e.bench_close)}</td><td class="small muted">${esc(e.valuation_note||'')}</td></tr>`).join('')}</table></div></div>`;
+  $('#main').innerHTML=h}
+
+async function runs(){const list=await api('/api/runs?limit=40');
+  let h=`<div class="tbl-wrap"><table><tr><th>ID</th><th>시장</th><th>모드</th><th>시작</th><th>종료</th><th>기준일</th><th>상태</th><th>오류</th></tr>${list.map(r=>`<tr class="click" onclick="runDetail(${r.id})"><td>${r.id}</td><td>${esc(r.market)}</td><td>${esc(r.mode)}</td><td class="small">${esc(r.started_at)}</td><td class="small">${esc(r.finished_at||'')}</td><td>${esc(r.as_of||'')}</td><td>${runBadge(r.status)}</td><td class="small neg">${esc(r.error||'')}</td></tr>`).join('')}</table></div>`;
+  $('#main').innerHTML=list.length?h:'<div class="card empty">실행 내역 없음</div>'}
+async function runDetail(id){const r=await api('/api/run?id='+id);
+  $('#drawerBody').innerHTML=`<button class="act close" onclick="closeDrawer()">닫기</button><h2>실행 #${r.id} ${runBadge(r.status)}</h2><div class="card"><div class="kv"><div>시장</div><div>${esc(r.market)} (${esc(r.mode)})</div><div>기준일</div><div>${esc(r.as_of)}</div><div>확인 방법</div><div class="small">${esc(r.completed_day_note)}</div><div>오류</div><div class="neg">${esc(r.error||'-')}</div></div>
+  <h3>스캔 범위</h3>${scanTable(r.summary)}<h3>공급원</h3>${sourcesTable(r.sources)}<h3>원본 요약(JSON)</h3><pre>${esc(JSON.stringify(r.summary,null,2))}</pre></div>`;$('#drawer').classList.add('open')}
+
+async function settings(){const s=OV.settings;
+  let h=`<div class="grid"><div class="card"><h2>장 마감 후 자동 실행</h2>
+  ${s.schedulerActive?'':'<div class="notice">데모 모드에서는 스케줄러가 동작하지 않습니다.</div>'}
+  <div class="kv"><div>사용</div><div><label><input type="checkbox" id="se" ${s.schedule_enabled==='true'?'checked':''}> 대시보드 실행 중 자동 실행</label></div>
+  <div>한국(평일, KST)</div><div><input type="time" id="skr" value="${esc(s.schedule_kr)}"> <span class="small muted">마지막 ${esc(s.schedule_last_kr||'-')}</span></div>
+  <div>미국(화~토, KST)</div><div><input type="time" id="sus" value="${esc(s.schedule_us)}"> <span class="small muted">마지막 ${esc(s.schedule_last_us||'-')}</span></div></div>
+  <div style="margin-top:10px"><button class="act" onclick="saveSettings()">저장</button> <span id="saved" class="small muted"></span></div>
+  <p class="small muted">대시보드를 띄우지 않고도 실행하려면 <code>scripts\\register-task.ps1</code>로 Windows 작업 스케줄러에 등록하세요. KRX 자료 반영 전이면 직전 영업일이 기준일로 기록됩니다.</p></div>
+  <div class="card"><h2>모의매매 설정</h2><div class="kv">${Object.entries(s.paper||{}).map(([k,v])=>`<div class="small">${esc(v.label)}</div><div>${k==='paper_enabled'?`<input type="checkbox" data-pk="${k}" ${v.value==='true'?'checked':''}>`:`<input data-pk="${k}" value="${esc(v.value)}" style="width:120px;font:inherit;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink)">`}</div>`).join('')}</div>
+  <div style="margin-top:10px"><button class="act" onclick="savePaper()">저장</button> <span id="psaved" class="small muted"></span></div><p class="small muted">비율은 소수(0.10=10%). 시작금은 계좌가 처음 만들어질 때만 적용됩니다. 설정값은 각 신호에 함께 저장됩니다.</p></div>
+  <div class="card"><h2>환경·키 상태</h2><div class="kv"><div>모드</div><div>${esc(OV.mode)}</div><div>DB</div><div class="small">${esc(OV.db)}</div><div>API 키</div><div class="small">${esc(OV.keyStatus)}</div></div>
+  <p class="small muted">키 값은 환경 변수에서만 읽고 화면·로그·DB에 기록하지 않습니다.</p></div></div>
+  <div class="card" style="margin-top:12px"><h2>규칙 버전</h2><ul class="plain small">${OV.ruleVersions.map(v=>`<li>${esc(v)}</li>`).join('')}</ul><h3>앱 추가 규칙(초기값, 검증 후 조정 대상)</h3><ul class="plain small">${OV.appRules.map(v=>`<li>${esc(v)}</li>`).join('')}</ul>
+  <h3>운영 범위</h3><p class="small">분석·모의 검증 전용입니다. 주문·환전·자금 이동 기능이 없으며, MAS·MSI·OIS는 확률이나 예상 수익률이 아닙니다.</p></div>`;
+  $('#main').innerHTML=h}
+async function saveSettings(){await api('/api/settings',{method:'POST',body:JSON.stringify({schedule_enabled:$('#se').checked?'true':'false',schedule_kr:$('#skr').value,schedule_us:$('#sus').value})});$('#saved').textContent='저장됨';}
+async function savePaper(){const b={};document.querySelectorAll('[data-pk]').forEach(el=>{b[el.dataset.pk]=el.type==='checkbox'?(el.checked?'true':'false'):el.value});try{await api('/api/settings',{method:'POST',body:JSON.stringify(b)});$('#psaved').textContent='저장됨'}catch(e){$('#psaved').textContent='오류: '+e.message}}
+async function trigger(m){if(!confirm(m+' 실데이터 실행을 시작할까요? (수 분 이상 걸릴 수 있음)'))return;const r=await api('/api/trigger?market='+m,{method:'POST'});alert(r.message);render()}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer()});
+render();setInterval(()=>{if(!$('#drawer').classList.contains('open'))header().catch(()=>{})},15000);
+</script>
+</body>
+</html>

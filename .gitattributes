@@ -1,0 +1,9 @@
+# Linux 운영 파일은 LF 고정(Windows 에서 커밋해도 서버에서 실행 가능)
+*.sh       text eol=lf
+*.service  text eol=lf
+*.timer    text eol=lf
+*.env.example text eol=lf
+# Windows 스크립트
+*.ps1      text eol=crlf
+*.jar      binary
+*.db       binary
