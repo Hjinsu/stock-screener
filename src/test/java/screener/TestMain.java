@@ -64,6 +64,7 @@ public final class TestMain {
         tests.put("뉴스: 7단계 분류·광고·복제 판정", NewsTests::classify);
         tests.put("뉴스: 창 밖·중복·광고 제거, 언론사 평균, 출처 20 미만 미평가", NewsTests::aggregate);
         tests.put("뉴스: MSI 직접 점수·기준일 점수 없으면 미산출", NewsTests::msiDirect);
+        tests.put("카카오: 토큰·보고 내용·중복 방지·불명확 미재발송·실패 재시도·미확정·토큰 갱신(모의 응답)", KakaoTests::all);
         tests.put("이관: 체크섬 정밀도·방언 변환", MigrationTests::canonAndDialect);
         tests.put("이관: 구버전 SQLite 자동 업그레이드(스키마 v" + screener.store.Schema.latestVersion() + ")", MigrationTests::legacySqliteUpgrade);
         tests.put("이관: SQLite→MariaDB PASS·재이관 거부·원본 퇴역(MariaDB 지정 시)", MigrationTests::sqliteToMariaDb);

@@ -29,6 +29,8 @@ public final class DashboardServer {
     private final int port;
     private HttpServer server;
     private volatile String lastManualRun = "";
+    private volatile String kakaoState;
+    private volatile long kakaoStateAt;
 
     public DashboardServer(Config cfg, Db db, int port) {
         this.cfg = cfg;
@@ -58,6 +60,54 @@ public final class DashboardServer {
                     try (InputStream in = getClass().getResourceAsStream("/web/dashboard.html")) {
                         send(ex, 200, "text/html; charset=utf-8", new String(in.readAllBytes(), StandardCharsets.UTF_8));
                     }
+                    return;
+                }
+                case "/kakao/login": {
+                    screener.report.KakaoReporter k = new screener.report.KakaoReporter(cfg, db);
+                    if (!k.configured()) { send(ex, 200, "text/html; charset=utf-8", page("KAKAO_REST_API_KEY 가 설정되지 않았습니다. 서버 환경 파일에 입력 후 대시보드를 재시작하세요.")); return; }
+                    kakaoState = java.util.UUID.randomUUID().toString();
+                    kakaoStateAt = System.currentTimeMillis();
+                    ex.getResponseHeaders().set("Location", k.authorizeUrl(kakaoState));
+                    send(ex, 302, "text/plain", "redirect");
+                    return;
+                }
+                case "/kakao/callback": {
+                    String st = q.get("state"), code = q.get("code");
+                    String msg;
+                    if (q.containsKey("error")) msg = "카카오 연결 취소/실패: " + q.get("error");
+                    else if (st == null || !st.equals(kakaoState) || System.currentTimeMillis() - kakaoStateAt > 600_000) msg = "요청 검증(state) 실패 — 대시보드에서 다시 연결하세요.";
+                    else {
+                        kakaoState = null;
+                        try { new screener.report.KakaoReporter(cfg, db).exchangeCode(code); msg = "카카오 연결 완료. 설정 탭에서 테스트 메시지를 보내 확인하세요."; }
+                        catch (Exception e) { msg = "토큰 발급 실패: " + Log.redact(e.getMessage()); }
+                    }
+                    send(ex, 200, "text/html; charset=utf-8", page(msg));
+                    return;
+                }
+                case "/api/kakao": {
+                    screener.report.KakaoReporter k = new screener.report.KakaoReporter(cfg, db);
+                    Map<String, Object> m = new LinkedHashMap<>(k.tokenStatus());
+                    m.put("enabled_KR", db.setting("kakao_enabled_KR", "false"));
+                    m.put("enabled_US", db.setting("kakao_enabled_US", "false"));
+                    m.put("redirectUri", cfg.kakaoRedirectUri);
+                    m.put("reports", db.query("SELECT id, account, market, trade_date, report_type, status, http_status, error, attempts, created_at, sent_at, message_text FROM kakao_reports ORDER BY id DESC LIMIT 30"));
+                    json(ex, m);
+                    return;
+                }
+                case "/api/kakao/test": {
+                    if (!"POST".equals(ex.getRequestMethod())) { send(ex, 405, "text/plain", "POST only"); return; }
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    try {
+                        screener.report.KakaoReporter.Response r = new screener.report.KakaoReporter(cfg, db).sendText("[모의매매] 테스트 메시지 — 카카오 연결 확인 (" + java.time.LocalDateTime.now().withNano(0) + ")");
+                        m.put("ok", r.status() == 200 && r.body().contains("\"result_code\":0"));
+                        m.put("message", r.status() == 200 ? "발송 요청 성공 — 카카오톡 '나와의 채팅'을 확인하세요" : "HTTP " + r.status() + " " + Log.redact(r.body()));
+                    } catch (Exception e) { m.put("ok", false); m.put("message", Log.redact(e.getMessage())); }
+                    json(ex, m);
+                    return;
+                }
+                case "/api/kakao/disconnect": {
+                    if (!"POST".equals(ex.getRequestMethod())) { send(ex, 405, "text/plain", "POST only"); return; }
+                    json(ex, Map.of("ok", true, "message", new screener.report.KakaoReporter(cfg, db).disconnect()));
                     return;
                 }
                 case "/api/overview": json(ex, overview()); return;
@@ -94,6 +144,8 @@ public final class DashboardServer {
                                 db.setSetting(k, v);
                             }
                         }
+                        for (String k : new String[]{"kakao_enabled_KR", "kakao_enabled_US"})
+                            if (body.containsKey(k)) db.setSetting(k, "true".equals(String.valueOf(body.get(k))) ? "true" : "false");
                         for (String k : PAPER_KEYS.keySet()) {
                             if (!body.containsKey(k)) continue;
                             String v = String.valueOf(body.get(k));
@@ -310,6 +362,11 @@ public final class DashboardServer {
         m.put("ok", true);
         m.put("message", lastManualRun + " 실행 시작 — 실행 내역에서 진행 상태 확인");
         return m;
+    }
+
+    private static String page(String msg) {
+        return "<!doctype html><meta charset='utf-8'><title>카카오 연결</title><body style='font-family:sans-serif;padding:24px'><p>"
+                + msg.replace("<", "&lt;") + "</p><p><a href='/'>대시보드로 돌아가기</a></p></body>";
     }
 
     private static Object parse(Object s) { return s == null ? null : Json.parse(s.toString()); }

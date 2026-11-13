@@ -280,11 +280,22 @@ async function settings(){const s=OV.settings;
   <p class="small muted">대시보드를 띄우지 않고도 실행하려면 <code>scripts\\register-task.ps1</code>로 Windows 작업 스케줄러에 등록하세요. KRX 자료 반영 전이면 직전 영업일이 기준일로 기록됩니다.</p></div>
   <div class="card"><h2>모의매매 설정</h2><div class="kv">${Object.entries(s.paper||{}).map(([k,v])=>`<div class="small">${esc(v.label)}</div><div>${k==='paper_enabled'?`<input type="checkbox" data-pk="${k}" ${v.value==='true'?'checked':''}>`:`<input data-pk="${k}" value="${esc(v.value)}" style="width:120px;font:inherit;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink)">`}</div>`).join('')}</div>
   <div style="margin-top:10px"><button class="act" onclick="savePaper()">저장</button> <span id="psaved" class="small muted"></span></div><p class="small muted">비율은 소수(0.10=10%). 시작금은 계좌가 처음 만들어질 때만 적용됩니다. 설정값은 각 신호에 함께 저장됩니다.</p></div>
+  <div class="card"><h2>카카오톡 모의매매 보고</h2><div id="kakaoBox" class="small muted">불러오는 중…</div></div>
   <div class="card"><h2>환경·키 상태</h2><div class="kv"><div>모드</div><div>${esc(OV.mode)}</div><div>DB</div><div class="small">${esc(OV.db)}</div><div>API 키</div><div class="small">${esc(OV.keyStatus)}</div></div>
   <p class="small muted">키 값은 환경 변수에서만 읽고 화면·로그·DB에 기록하지 않습니다.</p></div></div>
   <div class="card" style="margin-top:12px"><h2>규칙 버전</h2><ul class="plain small">${OV.ruleVersions.map(v=>`<li>${esc(v)}</li>`).join('')}</ul><h3>앱 추가 규칙(초기값, 검증 후 조정 대상)</h3><ul class="plain small">${OV.appRules.map(v=>`<li>${esc(v)}</li>`).join('')}</ul>
   <h3>운영 범위</h3><p class="small">분석·모의 검증 전용입니다. 주문·환전·자금 이동 기능이 없으며, MAS·MSI·OIS는 확률이나 예상 수익률이 아닙니다.</p></div>`;
-  $('#main').innerHTML=h}
+  $('#main').innerHTML=h;loadKakao().catch(e=>{const el=$('#kakaoBox');if(el)el.textContent='오류: '+e.message})}
+async function loadKakao(){const k=await api('/api/kakao');const el=$('#kakaoBox');if(!el)return;
+  let h=`<div class="kv"><div>REST API 키</div><div>${k.configured?'설정됨':'<span class="badge b-warn">미설정</span>'}</div><div>연결</div><div>${k.connected?'<span class="badge b-good">연결됨</span> '+esc(k.accessExpiresAt||''):'<span class="badge">미연결</span>'}</div>
+  <div>한국 보고</div><div><input type="checkbox" id="kkr" ${k.enabled_KR==='true'?'checked':''}> 장 마감 후 1회</div><div>미국 보고</div><div><input type="checkbox" id="kus" ${k.enabled_US==='true'?'checked':''}> 장 마감 후 1회</div>
+  <div>Redirect URI</div><div class="small">${esc(k.redirectUri)}</div></div>
+  <div class="toolbar" style="margin-top:8px"><a class="act" href="/kakao/login" style="text-decoration:none">카카오 연결</a><button class="act" onclick="kakaoTest()">테스트 메시지</button><button class="act" onclick="kakaoSave()">보고 설정 저장</button><button class="act" onclick="kakaoOff()">연결 해제</button><span id="ksaved" class="small muted"></span></div>
+  <h3>최근 발송</h3>${(k.reports||[]).length?`<div class="tbl-wrap"><table><tr><th>거래일</th><th>시장</th><th>유형</th><th>상태</th><th>시도</th><th>사유</th></tr>${k.reports.map(r=>`<tr title="${esc(r.message_text)}"><td>${esc(r.trade_date)}</td><td>${esc(r.market)}</td><td>${esc(r.report_type)}</td><td>${r.status==='SENT'?'<span class="badge b-good">발송</span>':r.status==='UNKNOWN'?'<span class="badge b-warn">불명확(재발송 안 함)</span>':r.status==='FAILED'?'<span class="badge b-bad">실패</span>':esc(r.status)}</td><td class="num">${r.attempts}</td><td class="small">${esc(r.error||'')}</td></tr>`).join('')}</table></div>`:'<div class="muted">기록 없음</div>'}`;
+  el.innerHTML=h}
+async function kakaoSave(){await api('/api/settings',{method:'POST',body:JSON.stringify({kakao_enabled_KR:$('#kkr').checked?'true':'false',kakao_enabled_US:$('#kus').checked?'true':'false'})});$('#ksaved').textContent='저장됨'}
+async function kakaoTest(){const r=await api('/api/kakao/test',{method:'POST'});alert(r.message);loadKakao()}
+async function kakaoOff(){if(!confirm('카카오 연결을 해제할까요? 토큰이 삭제됩니다.'))return;const r=await api('/api/kakao/disconnect',{method:'POST'});alert(r.message);loadKakao()}
 async function saveSettings(){await api('/api/settings',{method:'POST',body:JSON.stringify({schedule_enabled:$('#se').checked?'true':'false',schedule_kr:$('#skr').value,schedule_us:$('#sus').value})});$('#saved').textContent='저장됨';}
 async function savePaper(){const b={};document.querySelectorAll('[data-pk]').forEach(el=>{b[el.dataset.pk]=el.type==='checkbox'?(el.checked?'true':'false'):el.value});try{await api('/api/settings',{method:'POST',body:JSON.stringify(b)});$('#psaved').textContent='저장됨'}catch(e){$('#psaved').textContent='오류: '+e.message}}
 async function trigger(m){if(!confirm(m+' 실데이터 실행을 시작할까요? (수 분 이상 걸릴 수 있음)'))return;const r=await api('/api/trigger?market='+m,{method:'POST'});alert(r.message);render()}

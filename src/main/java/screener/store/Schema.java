@@ -93,6 +93,13 @@ public final class Schema {
         )));
     }
 
+    static {
+        MIGRATIONS.add(new Migration(5, "카카오톡 모의매매 보고 발송 기록(중복 방지·상태)", List.of(
+            s("CREATE TABLE IF NOT EXISTS kakao_reports(id %ID%, account %K16%, market %K8%, trade_date %K10%, report_type %K24%, status %K16%, message_text %T%,"
+                + " http_status %I%, error %T%, attempts %I%, created_at %K32%, sent_at %K32%, UNIQUE(account, market, trade_date, report_type))")
+        )));
+    }
+
     /** 이관 대상 테이블(참조 순서)과 정렬 키. 체크섬은 이 정렬 키 순서로 계산한다. */
     public static final Map<String, String> TABLE_ORDER = new LinkedHashMap<>();
     static {
@@ -120,6 +127,7 @@ public final class Schema {
         TABLE_ORDER.put("paper_performance", "as_of, market, strategy_version, dimension, bucket");
         TABLE_ORDER.put("news_daily", "market, date");
         TABLE_ORDER.put("news_items", "market, date, link");
+        TABLE_ORDER.put("kakao_reports", "id");
     }
 
     private static final Pattern K = Pattern.compile("%K(\\d+)%");

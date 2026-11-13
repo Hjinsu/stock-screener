@@ -62,6 +62,18 @@ public final class Pipeline {
             error = Log.redact(e.getClass().getSimpleName() + ": " + e.getMessage());
             Log.error("[" + m + "] 실행 실패: " + error);
         }
+        // 카카오 보고(선택): 계좌 평가가 기준일에 확정됐을 때만 정상 보고. 실패해도 실행 결과에 영향 없음.
+        if (!p.isDemo() && asOf != null) {
+            try {
+                String acc = m + "-" + ("KR".equals(m) ? "KRW" : "USD");
+                boolean eqOk = db.count("SELECT COUNT(*) FROM paper_equity_daily WHERE account=? AND date=?", acc, asOf.toString()) > 0;
+                boolean confirmed = !"FAILED".equals(status) && eqOk && !(sum.get("paper") instanceof Map && ((Map<?, ?>) sum.get("paper")).containsKey("error"));
+                String why = "FAILED".equals(status) ? "실행 실패: " + error : !eqOk ? "기준일 계좌 평가 없음" : "모의매매 처리 오류";
+                sum.put("kakao", new screener.report.KakaoReporter(cfg, db).report(m, asOf.toString(), confirmed, why));
+            } catch (Exception e) {
+                Log.warn("카카오 보고 생략(격리): " + Log.redact(String.valueOf(e.getMessage())));
+            }
+        }
         Map<String, Object> srcs = new LinkedHashMap<>();
         boolean anySourceFail = false;
         for (SourceStatus s : p.sources().all().values()) {

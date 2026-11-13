@@ -20,6 +20,10 @@ public final class Config {
     public final String naverId;
     public final String naverSecret;
     public final String ecosKey;
+    public String kakaoRestKey;            // 카카오 REST API 키(선택 기능, 테스트에서 주입)
+    public final String kakaoClientSecret; // 보안 › Client Secret 사용 시
+    public final String kakaoRedirectUri;
+    public final String kakaoLinkUrl;
     public final String dbUrl;       // 운영: jdbc:mariadb://127.0.0.1:3306/screener (없으면 SQLite)
     public final String dbUser;
     public final String dbPassword;
@@ -49,6 +53,10 @@ public final class Config {
         this.naverId = env("NAVER_CLIENT_ID");
         this.naverSecret = env("NAVER_CLIENT_SECRET");
         this.ecosKey = env("ECOS_API_KEY");
+        this.kakaoRestKey = env("KAKAO_REST_API_KEY");
+        this.kakaoClientSecret = env("KAKAO_CLIENT_SECRET");
+        this.kakaoRedirectUri = env("KAKAO_REDIRECT_URI") != null ? env("KAKAO_REDIRECT_URI") : "http://localhost:" + intEnv("SCREENER_PORT", 8765) + "/kakao/callback";
+        this.kakaoLinkUrl = env("KAKAO_LINK_URL") != null ? env("KAKAO_LINK_URL") : "http://localhost:" + intEnv("SCREENER_PORT", 8765);
         this.dbUrl = env("SCREENER_DB_URL");
         this.dbUser = env("SCREENER_DB_USER");
         this.dbPassword = env("SCREENER_DB_PASSWORD");
@@ -58,7 +66,7 @@ public final class Config {
         this.usOisTop = intEnv("US_OIS_TOP", 500);
         this.krFlowAggTop = intEnv("KR_FLOW_AGG_TOP", 100);
         this.fmpDailyBudget = intEnv("FMP_DAILY_BUDGET", 150);
-        for (String s : new String[]{krxKey, dartKey, tiingoKey, fmpKey, fredKey, secUserAgent, naverId, naverSecret, ecosKey, dbPassword}) Log.registerSecret(s);
+        for (String s : new String[]{krxKey, dartKey, tiingoKey, fmpKey, fredKey, secUserAgent, naverId, naverSecret, ecosKey, dbPassword, kakaoRestKey, kakaoClientSecret}) Log.registerSecret(s);
     }
 
     public static Config load(boolean demo, int limit) {
@@ -86,6 +94,7 @@ public final class Config {
         return "KRX_API_KEY: " + set(krxKey) + ", DART_API_KEY: " + set(dartKey) + ", SEC_USER_AGENT: " + set(secUserAgent)
                 + ", TIINGO_API_KEY: " + set(tiingoKey) + ", FMP_API_KEY: " + set(fmpKey) + ", NAVER_CLIENT_ID/SECRET: " + set(naverId == null ? null : naverSecret)
                 + ", ECOS_API_KEY: " + set(ecosKey) + ", FRED_API_KEY(미사용): " + set(fredKey)
+                + ", KAKAO_REST_API_KEY(선택): " + set(kakaoRestKey)
                 + ", DB: " + (dbUrl == null ? "SQLite(" + dbPath.getFileName() + ")" : "MariaDB(SCREENER_DB_PASSWORD " + set(dbPassword) + ")");
     }
 
