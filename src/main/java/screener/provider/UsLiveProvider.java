@@ -89,7 +89,14 @@ public final class UsLiveProvider implements MarketDataProvider {
 
     @Override public List<Security> listUniverse(LocalDate asOf) throws Exception {
         List<UsSources.NasdaqTrader.Listing> ls = nt.all();
-        Map<String, String> cikBy = sec.enabled() ? sec.tickers() : Map.of();
+        Map<String, String> cikBy;
+        try {
+            cikBy = sec.enabled() ? sec.tickers() : Map.of();
+        } catch (screener.util.Http.HttpError e) {
+            if (e.status != 403) throw e;
+            throw new IllegalStateException(e.getMessage() + " — SEC가 이 서버의 요청을 차단함. SEC_USER_AGENT가 '앱이름/버전 본인이메일' 형식인지(따옴표·예시 주소 금지) 확인하고,"
+                    + " 서버에서 curl -A \"$SEC_USER_AGENT\" https://www.sec.gov/files/company_tickers.json 으로 재현해 보세요. 차단 해제까지 약 10분 이상 걸릴 수 있습니다.", e);
+        }
         if (!sec.enabled()) Log.warn("SEC_USER_AGENT 미설정 — 미국 시총·재무·공시 산출 불가");
         // 발행주식수: dei(표지) 최근 5개 분기 시점, 없으면 희석가중평균주식수(전 클래스 합산)
         Map<String, Object[]> shares = new HashMap<>();

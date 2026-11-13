@@ -97,9 +97,7 @@ public final class Http {
                     return r.body();
                 }
                 if (sc == 204) { st.ok(false); return new byte[0]; }
-                String snippet = new String(r.body(), StandardCharsets.UTF_8);
-                if (snippet.length() > 160) snippet = snippet.substring(0, 160);
-                last = new HttpError(sc, "HTTP " + sc + " " + Log.redact(snippet.replaceAll("\\s+", " ")));
+                last = new HttpError(sc, "[" + st.name + "] HTTP " + sc + " " + Log.redact(snippet(new String(r.body(), StandardCharsets.UTF_8))));
                 if (sc == 429 && noRetry429.contains(uri.getHost())) break;
                 if (sc == 429 || sc >= 500) {
                     sleep(1500L * attempt * attempt);
@@ -119,6 +117,14 @@ public final class Http {
         st.fail(Log.redact(msg));
         Log.warn("[" + st.name + "] 요청 실패 " + Log.redact(url) + " : " + Log.redact(msg));
         throw last == null ? new IOException("요청 실패") : last;
+    }
+
+    /** 오류 본문 요약: HTML 오류 페이지는 &lt;title&gt;만, 그 외는 앞 160자. */
+    static String snippet(String body) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?is)<title[^>]*>(.*?)</title>").matcher(body);
+        String s = m.find() ? "(HTML) " + m.group(1) : body;
+        s = s.replaceAll("\\s+", " ").trim();
+        return s.length() > 160 ? s.substring(0, 160) : s;
     }
 
     private void throttle(String host) {

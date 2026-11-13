@@ -87,6 +87,7 @@ public final class Pipeline {
                     }
                 }
                 sum.put("kakao", ks);
+                Log.info("[" + m + "] 카카오: " + Log.redact(screener.util.Json.write(ks)));
             } catch (Exception e) {
                 Log.warn("카카오 보고 생략(격리): " + Log.redact(String.valueOf(e.getMessage())));
             }

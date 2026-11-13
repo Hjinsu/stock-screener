@@ -159,7 +159,7 @@ public final class App {
             System.out.println("상태: " + r.get("status") + (r.get("error") != null ? " / " + r.get("error") : ""));
             for (String k : new String[]{"completedDay", "listingsTotal", "commonStocks", "typeExcluded", "mcapUnknown", "scanRequested", "barsOk", "barsFailed",
                     "masFilter", "masScored", "masStatus", "oisUniverse", "oisScored", "oisStatus", "flowsOk", "fundamentalsOk", "sectorsOk",
-                    "disclosuresOk", "disclosuresFailed", "msi", "newAlerts", "checkpointsAdded", "paper", "limitApplied"}) {
+                    "disclosuresOk", "disclosuresFailed", "msi", "newAlerts", "checkpointsAdded", "paper", "kakao", "limitApplied"}) {
                 if (r.containsKey(k)) System.out.println("  " + k + ": " + Json.write(r.get(k)));
             }
             Object n = r.get("notes");

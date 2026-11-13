@@ -262,6 +262,7 @@ public final class UsSources {
             try {
                 a = Json.arr(Json.parse(http.getText(st, "https://financialmodelingprep.com/stable/quote?symbol=" + Yahoo.sym(symbol) + "&apikey=" + key, null, Duration.ofHours(20))));
             } catch (Http.HttpError e) {
+                if (e.status == 401 || e.status == 403) { budget = 0; st.note = "키 거부(HTTP " + e.status + ") — FMP_API_KEY 값 확인 필요, 이번 실행에서 FMP 중단"; }
                 if (e.status == 429 || e.status == 402) { budget = 0; st.note = "한도 초과/권한 없음(HTTP " + e.status + ") — 이번 실행에서 FMP 중단"; }
                 throw e;
             }
