@@ -166,55 +166,99 @@ public final class KakaoReporter {
         return s.substring(0, TEXT_MAX - 13) + "…(대시보드 참조)";
     }
 
-    /**
-     * 시장 실행 후 보고. 확정(계좌 평가가 기준일에 존재하고 실행 실패가 아님)이면 DAILY, 아니면 DAILY_UNCONFIRMED 로 구분해 발송한다.
-     * 이미 SENT·UNKNOWN·PENDING 이면 건너뛰고, FAILED(전달 전 명확한 실패)만 다시 시도한다. 예외를 밖으로 던지지 않는다.
-     */
+    /** 기존 호출 호환: 요약문을 DB 모의매매 결과로 생성. */
     public Map<String, Object> report(String market, String tradeDate, boolean confirmed, String unconfirmedReason) {
+        return daily(market, tradeDate, confirmed, unconfirmedReason, null, java.time.LocalDateTime.now().withNano(0).toString());
+    }
+
+    /**
+     * 일일 요약 1통. 확정이면 DAILY, 아니면 DAILY_UNCONFIRMED. checkedAt = 신호·데이터를 실제로 확인한 시각(기록용).
+     */
+    public Map<String, Object> daily(String market, String tradeDate, boolean confirmed, String why, String summary, String checkedAt) {
         Map<String, Object> out = new LinkedHashMap<>();
         try {
-            if (!configured() || !"true".equals(db.setting("kakao_enabled_" + market, "false"))) { out.put("status", "DISABLED"); return out; }
-            if (!connected()) { out.put("status", "NOT_CONNECTED"); return out; }
+            if (!enabled(market)) { out.put("status", "DISABLED"); return out; }
             String account = market + "-" + ("KR".equals(market) ? "KRW" : "USD");
             String type = confirmed ? "DAILY" : "DAILY_UNCONFIRMED";
-            List<Map<String, Object>> ex = db.query("SELECT id, status, attempts FROM kakao_reports WHERE account=? AND market=? AND trade_date=? AND report_type=?", account, market, tradeDate, type);
-            if (!ex.isEmpty() && !"FAILED".equals(ex.get(0).get("status"))) { out.put("status", "ALREADY_" + ex.get(0).get("status")); return out; }
-            String text = confirmed ? buildDaily(account, market, tradeDate) : "[모의매매·미확정] " + market + " " + tradeDate + "\n데이터 미확정으로 정상 보고를 생략합니다.\n사유: " + unconfirmedReason;
-            text = fit(text);
-            long id;
-            if (ex.isEmpty()) {
-                try (var ps = db.prepare("INSERT INTO kakao_reports(account, market, trade_date, report_type, status, message_text, attempts, created_at) VALUES(?,?,?,?,'PENDING',?,1,?)", java.sql.Statement.RETURN_GENERATED_KEYS)) {
-                    ps.setString(1, account); ps.setString(2, market); ps.setString(3, tradeDate); ps.setString(4, type); ps.setString(5, text); ps.setString(6, now());
-                    ps.executeUpdate();
-                    try (var rs = ps.getGeneratedKeys()) { rs.next(); id = rs.getLong(1); }
-                }
-            } else {
-                id = ((Number) ex.get(0).get("id")).longValue();
-                update(id, "PENDING", null, null, text, true);
-            }
-            try {
-                Response r = sendText(text);
-                boolean ok = r.status() == 200 && r.body() != null && r.body().contains("\"result_code\":0");
-                update(id, ok ? "SENT" : "FAILED", r.status(), ok ? null : "HTTP " + r.status() + " " + errorCode(r.body()), null, false);
-                out.put("status", ok ? "SENT" : "FAILED");
-            } catch (IOException e) {
-                // 토큰 문제 등 전송 전 실패는 FAILED, 전송 중 응답 유실은 UNKNOWN(자동 재발송 금지)
-                boolean beforeSend = e.getMessage() != null && (e.getMessage().startsWith("토큰") || e.getMessage().startsWith("카카오 미연결"));
-                update(id, beforeSend ? "FAILED" : "UNKNOWN", null, Log.redact(e.getMessage()), null, false);
-                out.put("status", beforeSend ? "FAILED" : "UNKNOWN");
-            }
+            String text = confirmed ? (summary != null ? summary : buildDaily(account, market, tradeDate))
+                    : "[모의매매·미확정] " + market + " " + tradeDate + "\n데이터 미확정으로 정상 보고를 생략합니다.\n사유: " + why;
+            out.putAll(dispatch("kakao_reports", new String[]{"account", "market", "trade_date", "report_type"}, new String[]{account, market, tradeDate, type}, fit(text), checkedAt));
             out.put("type", type);
-            return out;
         } catch (Exception e) {
             Log.warn("카카오 보고 처리 실패(격리): " + Log.redact(String.valueOf(e.getMessage())));
             out.put("status", "ERROR");
             out.put("error", Log.redact(String.valueOf(e.getMessage())));
-            return out;
+        }
+        return out;
+    }
+
+    /** 상태 변화 알림(같은 거래일·유형·대상은 1회). */
+    public Map<String, Object> event(String market, String tradeDate, String type, String subject, String text, String checkedAt) {
+        try {
+            if (!enabled(market)) return Map.of("status", "DISABLED");
+            return dispatch("kakao_events", new String[]{"market", "trade_date", "event_type", "subject"}, new String[]{market, tradeDate, type, subject}, fit(text), checkedAt);
+        } catch (Exception e) {
+            Log.warn("카카오 알림 처리 실패(격리): " + Log.redact(String.valueOf(e.getMessage())));
+            return Map.of("status", "ERROR");
         }
     }
 
-    private void update(long id, String status, Integer http, String error, String text, boolean incAttempt) throws Exception {
-        try (var ps = db.prepare("UPDATE kakao_reports SET status=?, http_status=?, error=?, sent_at=?, message_text=COALESCE(?, message_text)"
+    /** 주간 보고 1통(한·미 중 하나라도 보고가 켜져 있으면). */
+    public Map<String, Object> weekly(String weekEnd, String text, String checkedAt) {
+        try {
+            if (!configured() || !(enabledFlag("KR") || enabledFlag("US"))) return Map.of("status", "DISABLED");
+            if (!connected()) return Map.of("status", "NOT_CONNECTED");
+            return dispatch("kakao_reports", new String[]{"account", "market", "trade_date", "report_type"}, new String[]{"ALL", "ALL", weekEnd, "WEEKLY"}, fit(text), checkedAt);
+        } catch (Exception e) {
+            Log.warn("카카오 주간 보고 실패(격리): " + Log.redact(String.valueOf(e.getMessage())));
+            return Map.of("status", "ERROR");
+        }
+    }
+
+    private boolean enabledFlag(String market) throws Exception { return "true".equals(db.setting("kakao_enabled_" + market, "false")); }
+
+    private boolean enabled(String market) throws Exception { return configured() && enabledFlag(market); }
+
+    /**
+     * 공통 발송: 자연키로 1회만. 기존 행이 SENT·UNKNOWN·PENDING 이면 건너뛰고 FAILED 만 재시도.
+     * 전송 전 실패(토큰) → FAILED, 전송 중 응답 유실 → UNKNOWN(자동 재발송 금지).
+     */
+    private Map<String, Object> dispatch(String table, String[] keyCols, String[] keyVals, String text, String checkedAt) throws Exception {
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (!connected()) { out.put("status", "NOT_CONNECTED"); return out; }
+        String where = String.join(" AND ", java.util.Arrays.stream(keyCols).map(k -> k + "=?").toList());
+        List<Map<String, Object>> ex = db.query("SELECT id, status FROM " + table + " WHERE " + where, (Object[]) keyVals);
+        if (!ex.isEmpty() && !"FAILED".equals(ex.get(0).get("status"))) { out.put("status", "ALREADY_" + ex.get(0).get("status")); return out; }
+        long id;
+        if (ex.isEmpty()) {
+            String cols = String.join(", ", keyCols) + ", status, message_text, attempts, created_at, checked_at";
+            String ph = String.join(",", java.util.Collections.nCopies(keyCols.length, "?")) + ",'PENDING',?,1,?,?";
+            try (var ps = db.prepare("INSERT INTO " + table + "(" + cols + ") VALUES(" + ph + ")", java.sql.Statement.RETURN_GENERATED_KEYS)) {
+                int i = 1;
+                for (String v : keyVals) ps.setString(i++, v);
+                ps.setString(i++, text); ps.setString(i++, now()); ps.setString(i, checkedAt);
+                ps.executeUpdate();
+                try (var rs = ps.getGeneratedKeys()) { rs.next(); id = rs.getLong(1); }
+            }
+        } else {
+            id = ((Number) ex.get(0).get("id")).longValue();
+            update(table, id, "PENDING", null, null, text, true);
+        }
+        try {
+            Response r = sendText(text);
+            boolean ok = r.status() == 200 && r.body() != null && r.body().contains("\"result_code\":0");
+            update(table, id, ok ? "SENT" : "FAILED", r.status(), ok ? null : "HTTP " + r.status() + " " + errorCode(r.body()), null, false);
+            out.put("status", ok ? "SENT" : "FAILED");
+        } catch (IOException e) {
+            boolean beforeSend = e.getMessage() != null && (e.getMessage().startsWith("토큰") || e.getMessage().startsWith("카카오 미연결"));
+            update(table, id, beforeSend ? "FAILED" : "UNKNOWN", null, Log.redact(e.getMessage()), null, false);
+            out.put("status", beforeSend ? "FAILED" : "UNKNOWN");
+        }
+        return out;
+    }
+
+    private void update(String table, long id, String status, Integer http, String error, String text, boolean incAttempt) throws Exception {
+        try (var ps = db.prepare("UPDATE " + table + " SET status=?, http_status=?, error=?, sent_at=?, message_text=COALESCE(?, message_text)"
                 + (incAttempt ? ", attempts=attempts+1" : "") + " WHERE id=?")) {
             ps.setString(1, status);
             if (http == null) ps.setNull(2, java.sql.Types.BIGINT); else ps.setInt(2, http);

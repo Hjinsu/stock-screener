@@ -33,6 +33,10 @@ public final class Pipeline {
     private final Db db;
     private final Config cfg;
     private LocalDate effectiveAsOf;
+    private screener.report.DailyReport.Result daily;
+    private String checkedAt;
+    /** 테스트용 카카오 전송 주입(null 이면 실데이터 실행에서만 실제 전송). */
+    public screener.report.KakaoReporter.Transport kakaoTx;
 
     public Pipeline(MarketDataProvider p, Db db, Config cfg) {
         this.p = p;
@@ -62,14 +66,27 @@ public final class Pipeline {
             error = Log.redact(e.getClass().getSimpleName() + ": " + e.getMessage());
             Log.error("[" + m + "] 실행 실패: " + error);
         }
-        // 카카오 보고(선택): 계좌 평가가 기준일에 확정됐을 때만 정상 보고. 실패해도 실행 결과에 영향 없음.
-        if (!p.isDemo() && asOf != null) {
+        // 카카오(선택): 데이터 확정 후 시장별 요약 1통 + 상태 변화 알림. 미국 금요일 세션 처리 후 주간 보고. 실패해도 실행 결과에 영향 없음.
+        if ((!p.isDemo() || kakaoTx != null) && asOf != null) {
             try {
+                screener.report.KakaoReporter k = kakaoTx == null ? new screener.report.KakaoReporter(cfg, db) : new screener.report.KakaoReporter(cfg, db, kakaoTx);
                 String acc = m + "-" + ("KR".equals(m) ? "KRW" : "USD");
                 boolean eqOk = db.count("SELECT COUNT(*) FROM paper_equity_daily WHERE account=? AND date=?", acc, asOf.toString()) > 0;
-                boolean confirmed = !"FAILED".equals(status) && eqOk && !(sum.get("paper") instanceof Map && ((Map<?, ?>) sum.get("paper")).containsKey("error"));
-                String why = "FAILED".equals(status) ? "실행 실패: " + error : !eqOk ? "기준일 계좌 평가 없음" : "모의매매 처리 오류";
-                sum.put("kakao", new screener.report.KakaoReporter(cfg, db).report(m, asOf.toString(), confirmed, why));
+                boolean confirmed = !"FAILED".equals(status) && eqOk && daily != null && !(sum.get("paper") instanceof Map && ((Map<?, ?>) sum.get("paper")).containsKey("error"));
+                String why = "FAILED".equals(status) ? "실행 실패: " + error : !eqOk ? "기준일 계좌 평가 없음" : daily == null ? "보고서 생성 실패" : "모의매매 처리 오류";
+                String ck = checkedAt != null ? checkedAt : java.time.LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul")).withNano(0).toString();
+                Map<String, Object> ks = new LinkedHashMap<>();
+                ks.put("daily", k.daily(m, asOf.toString(), confirmed, why, daily == null ? null : daily.summary(), ck));
+                if (confirmed) {
+                    List<Object> evs = new ArrayList<>();
+                    for (screener.report.DailyReport.Event e : daily.events()) evs.add(e.type() + ":" + e.subject() + "=" + k.event(m, asOf.toString(), e.type(), e.subject(), e.text(), ck).get("status"));
+                    ks.put("events", evs);
+                    if ("US".equals(m) && asOf.getDayOfWeek() == java.time.DayOfWeek.FRIDAY) {
+                        screener.report.WeeklyReport.Result w = screener.report.WeeklyReport.build(db, asOf, ck);
+                        ks.put("weekly", k.weekly(w.periodKey(), w.summary(), ck));
+                    }
+                }
+                sum.put("kakao", ks);
             } catch (Exception e) {
                 Log.warn("카카오 보고 생략(격리): " + Log.redact(String.valueOf(e.getMessage())));
             }
@@ -287,6 +304,8 @@ public final class Pipeline {
         sum.put("checkpointsAdded", cps);
 
         // 9) 모의 자동매매(역발상 OIS 후보, 다음 거래일 시가 체결). 실패해도 분석 저장은 유지.
+        final Map<String, ScoreCard> oisForReport = oisCards;
+        final List<Security> flowForReport = flowAgg;
         if ("true".equals(db.setting("paper_enabled", "true"))) {
             try {
                 Map<String, Object> ps = new PaperTrader(db, p, ctx, runId).run(oisCards, msi);
@@ -297,6 +316,15 @@ public final class Pipeline {
                 notes.add("모의매매 처리 실패: " + Log.redact(String.valueOf(e)));
                 Log.error("[" + m + "] 모의매매 실패: " + Log.redact(String.valueOf(e)));
             }
+        }
+        // 10) 일일 보고서(원본 02 §11) — 신호 확인 시각 기록. 실패해도 실행 결과 유지.
+        try {
+            checkedAt = java.time.LocalDateTime.now(java.time.ZoneId.of("Asia/Seoul")).withNano(0).toString();
+            daily = screener.report.DailyReport.build(db, ctx, p, msi, oisForReport, flowForReport, checkedAt);
+            sum.put("report", Map.of("checkedAt", checkedAt, "events", daily.events().size()));
+        } catch (Exception e) {
+            notes.add("일일 보고서 생성 실패: " + Log.redact(String.valueOf(e)));
+            Log.warn("[" + m + "] 일일 보고서 실패: " + Log.redact(String.valueOf(e)));
         }
         sum.put("newAlerts", newAlerts);
         prune(m);

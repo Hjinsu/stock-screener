@@ -100,6 +100,17 @@ public final class Schema {
         )));
     }
 
+    static {
+        MIGRATIONS.add(new Migration(6, "일일·주간 보고서 저장, 상태 변화 알림 발송 기록, 신호 확인 시각", List.of(
+            s("CREATE TABLE IF NOT EXISTS reports(id %ID%, market %K8%, report_type %K16%, period_key %K10%, checked_at %K32%, text %T%, content_json %T%,"
+                + " created_at %K32%, UNIQUE(market, report_type, period_key))"),
+            s("CREATE TABLE IF NOT EXISTS kakao_events(id %ID%, market %K8%, trade_date %K10%, event_type %K32%, subject %K64%, status %K16%, message_text %T%,"
+                + " checked_at %K32%, http_status %I%, error %T%, attempts %I%, created_at %K32%, sent_at %K32%, UNIQUE(market, trade_date, event_type, subject))"),
+            s("CREATE TABLE IF NOT EXISTS event_state(market %K8%, kind %K32%, subject %K64%, state %K16%, as_of %K10%, PRIMARY KEY(market, kind, subject))"),
+            addColumn("kakao_reports", "checked_at", "%K32%")
+        )));
+    }
+
     /** 이관 대상 테이블(참조 순서)과 정렬 키. 체크섬은 이 정렬 키 순서로 계산한다. */
     public static final Map<String, String> TABLE_ORDER = new LinkedHashMap<>();
     static {
@@ -128,6 +139,9 @@ public final class Schema {
         TABLE_ORDER.put("news_daily", "market, date");
         TABLE_ORDER.put("news_items", "market, date, link");
         TABLE_ORDER.put("kakao_reports", "id");
+        TABLE_ORDER.put("reports", "id");
+        TABLE_ORDER.put("kakao_events", "id");
+        TABLE_ORDER.put("event_state", "market, kind, subject");
     }
 
     private static final Pattern K = Pattern.compile("%K(\\d+)%");

@@ -299,6 +299,20 @@ public final class UsLiveProvider implements MarketDataProvider {
 
     @Override public String benchmarkKey(Security s) { return "SPX"; }
 
+    @Override public VolObs volatility(LocalDate asOf) {
+        try { return vixObs(cboe.history("VIX"), asOf, "Cboe VIX_History.csv"); }
+        catch (Exception e) { return new VolObs("VIX", null, null, null, UsSources.Cboe.NAME, "수집 실패: " + e.getMessage()); }
+    }
+
+    /** 기준일 이하 최신 VIX 와 전일 대비. 기준일보다 이전 값이면 날짜를 표시(공급원 갱신 지연). */
+    public static VolObs vixObs(List<Bar> vix, LocalDate asOf, String src) {
+        Bar last = null, prev = null;
+        for (Bar b : vix) { if (b.date().isAfter(asOf)) break; prev = last; last = b; }
+        if (last == null) return new VolObs("VIX", null, null, null, src, "기준일 이하 자료 없음");
+        return new VolObs("VIX", last.close(), prev == null ? null : last.close() - prev.close(), last.date().toString(), src,
+                last.date().equals(asOf) ? null : "공급원 최신일 " + last.date() + "(기준일 " + asOf + "보다 이전)");
+    }
+
     @Override public Map<String, List<Bar>> sentimentSeries(LocalDate asOf) {
         Map<String, List<Bar>> m = new HashMap<>();
         for (String k : new String[]{"VIX", "VIX3M"}) {

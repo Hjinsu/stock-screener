@@ -52,6 +52,16 @@ public final class KrxSource {
         return null;
     }
 
+    /** VKOSPI(코스피 200 변동성지수, 파생상품지수 시세정보 서비스 승인 필요). 반환 {종가, 전일 대비} 또는 null. */
+    public Double[] vkospi(LocalDate date) throws Exception {
+        if (key == null) return null;
+        Duration ttl = date.isBefore(LocalDate.now().minusDays(3)) ? Duration.ofDays(3650) : Duration.ofHours(1);
+        String body = http.getText(st, BASE + "idx/drvprod_dd_trd?basDd=" + date.format(D), Map.of("AUTH_KEY", key), ttl);
+        for (Map<String, Object> r : rows(body))
+            if ("코스피 200 변동성지수".equals(Json.str(r, "IDX_NM"))) return new Double[]{Num.parse(Json.str(r, "CLSPRC_IDX")), Num.parse(Json.str(r, "CMPPREVDD_IDX"))};
+        return null;
+    }
+
     static List<Map<String, Object>> rows(String body) {
         Map<String, Object> o = Json.obj(Json.parse(body));
         List<Map<String, Object>> out = new ArrayList<>();

@@ -90,7 +90,8 @@ public final class DashboardServer {
                     m.put("enabled_KR", db.setting("kakao_enabled_KR", "false"));
                     m.put("enabled_US", db.setting("kakao_enabled_US", "false"));
                     m.put("redirectUri", cfg.kakaoRedirectUri);
-                    m.put("reports", db.query("SELECT id, account, market, trade_date, report_type, status, http_status, error, attempts, created_at, sent_at, message_text FROM kakao_reports ORDER BY id DESC LIMIT 30"));
+                    m.put("reports", db.query("SELECT id, account, market, trade_date, report_type, status, http_status, error, attempts, created_at, checked_at, sent_at, message_text FROM kakao_reports ORDER BY id DESC LIMIT 30"));
+                    m.put("events", db.query("SELECT id, market, trade_date, event_type AS report_type, subject, status, error, attempts, checked_at, sent_at, message_text FROM kakao_events ORDER BY id DESC LIMIT 30"));
                     json(ex, m);
                     return;
                 }
@@ -110,6 +111,7 @@ public final class DashboardServer {
                     json(ex, Map.of("ok", true, "message", new screener.report.KakaoReporter(cfg, db).disconnect()));
                     return;
                 }
+                case "/api/reports": json(ex, db.query("SELECT id, market, report_type, period_key, checked_at, text FROM reports ORDER BY period_key DESC, id DESC LIMIT 60")); return;
                 case "/api/overview": json(ex, overview()); return;
                 case "/api/runs": json(ex, db.query("SELECT id, market, mode, started_at, finished_at, as_of, status, error, completed_day_note FROM runs ORDER BY id DESC LIMIT ?", intq(q, "limit", 30))); return;
                 case "/api/run": json(ex, run(q.get("id"))); return;

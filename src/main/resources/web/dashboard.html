@@ -80,7 +80,7 @@ details summary{cursor:pointer;color:var(--muted)}
 <div class="drawer" id="drawer" onclick="if(event.target===this)closeDrawer()"><div class="panel" id="drawerBody"></div></div>
 
 <script>
-const TABS=[['overview','개요'],['mas','매집 의심(MAS)'],['ois','역발상(OIS)'],['msi','시장심리(MSI)'],['alerts','알림'],['tracking','추적'],['paper','모의매매'],['runs','실행 내역'],['settings','설정·규칙']];
+const TABS=[['overview','개요'],['mas','매집 의심(MAS)'],['ois','역발상(OIS)'],['msi','시장심리(MSI)'],['alerts','알림'],['tracking','추적'],['paper','모의매매'],['reports','보고서'],['runs','실행 내역'],['settings','설정·규칙']];
 let state={tab:'overview',market:'KR',filter:'active',model:'MAS'};
 try{const s=JSON.parse(localStorage.getItem('scr-ui')||'{}');Object.assign(state,s)}catch(e){}
 const $=s=>document.querySelector(s);
@@ -110,7 +110,7 @@ async function header(){
   $('#nav').innerHTML=TABS.map(([k,l])=>`<button class="${state.tab===k?'on':''}" onclick="go('${k}')">${l}</button>`).join('');
 }
 async function render(){
-  try{await header();const f={overview,mas:()=>cands('MAS'),ois:()=>cands('OIS'),msi,alerts,tracking,paper,runs,settings}[state.tab]||overview;await f()}
+  try{await header();const f={overview,mas:()=>cands('MAS'),ois:()=>cands('OIS'),msi,alerts,tracking,paper,reports,runs,settings}[state.tab]||overview;await f()}
   catch(e){$('#main').innerHTML=`<div class="card"><b>오류</b><pre>${esc(e.message)}</pre></div>`}
 }
 
@@ -263,6 +263,9 @@ async function paper(){const d=await api('/api/paper?market='+state.market);cons
   h+=`<div class="card" style="margin-top:12px"><h2>일별 평가(거래 없는 날 포함)</h2><div class="tbl-wrap" style="max-height:360px;overflow:auto"><table><tr><th>일자</th><th class="num">총자산</th><th class="num">현금</th><th class="num">보유</th><th class="num">체결</th><th class="num">미체결</th><th class="num">보류</th><th class="num">벤치마크</th><th>비고</th></tr>${eq.slice().reverse().map(e=>`<tr><td>${esc(e.date)}</td><td class="num">${money(m,e.equity)}</td><td class="num">${money(m,e.cash)}</td><td class="num">${money(m,e.positions_value)}</td><td class="num">${e.n_fills}</td><td class="num">${e.n_unfilled}</td><td class="num">${e.n_deferred}</td><td class="num">${e.bench_close==null?'-':n1(e.bench_close)}</td><td class="small muted">${esc(e.valuation_note||'')}</td></tr>`).join('')}</table></div></div>`;
   $('#main').innerHTML=h}
 
+async function reports(){const l=await api('/api/reports');
+  if(!l.length){$('#main').innerHTML='<div class="card empty">보고서 없음 — 실데이터 실행 후 생성됩니다.</div>';return}
+  $('#main').innerHTML=l.map(r=>`<div class="card" style="margin-bottom:12px"><h2>${r.report_type==='WEEKLY'?'주간':'일일'} · ${esc(r.market)} · ${esc(r.period_key)} <span class="badge">확인 ${esc(r.checked_at)}</span></h2><pre>${esc(r.text)}</pre></div>`).join('')}
 async function runs(){const list=await api('/api/runs?limit=40');
   let h=`<div class="tbl-wrap"><table><tr><th>ID</th><th>시장</th><th>모드</th><th>시작</th><th>종료</th><th>기준일</th><th>상태</th><th>오류</th></tr>${list.map(r=>`<tr class="click" onclick="runDetail(${r.id})"><td>${r.id}</td><td>${esc(r.market)}</td><td>${esc(r.mode)}</td><td class="small">${esc(r.started_at)}</td><td class="small">${esc(r.finished_at||'')}</td><td>${esc(r.as_of||'')}</td><td>${runBadge(r.status)}</td><td class="small neg">${esc(r.error||'')}</td></tr>`).join('')}</table></div>`;
   $('#main').innerHTML=list.length?h:'<div class="card empty">실행 내역 없음</div>'}
@@ -291,7 +294,7 @@ async function loadKakao(){const k=await api('/api/kakao');const el=$('#kakaoBox
   <div>한국 보고</div><div><input type="checkbox" id="kkr" ${k.enabled_KR==='true'?'checked':''}> 장 마감 후 1회</div><div>미국 보고</div><div><input type="checkbox" id="kus" ${k.enabled_US==='true'?'checked':''}> 장 마감 후 1회</div>
   <div>Redirect URI</div><div class="small">${esc(k.redirectUri)}</div></div>
   <div class="toolbar" style="margin-top:8px"><a class="act" href="/kakao/login" style="text-decoration:none">카카오 연결</a><button class="act" onclick="kakaoTest()">테스트 메시지</button><button class="act" onclick="kakaoSave()">보고 설정 저장</button><button class="act" onclick="kakaoOff()">연결 해제</button><span id="ksaved" class="small muted"></span></div>
-  <h3>최근 발송</h3>${(k.reports||[]).length?`<div class="tbl-wrap"><table><tr><th>거래일</th><th>시장</th><th>유형</th><th>상태</th><th>시도</th><th>사유</th></tr>${k.reports.map(r=>`<tr title="${esc(r.message_text)}"><td>${esc(r.trade_date)}</td><td>${esc(r.market)}</td><td>${esc(r.report_type)}</td><td>${r.status==='SENT'?'<span class="badge b-good">발송</span>':r.status==='UNKNOWN'?'<span class="badge b-warn">불명확(재발송 안 함)</span>':r.status==='FAILED'?'<span class="badge b-bad">실패</span>':esc(r.status)}</td><td class="num">${r.attempts}</td><td class="small">${esc(r.error||'')}</td></tr>`).join('')}</table></div>`:'<div class="muted">기록 없음</div>'}`;
+  <h3>최근 발송(요약·주간·상태 변화 알림)</h3>${(k.reports||[]).concat(k.events||[]).length?`<div class="tbl-wrap"><table><tr><th>거래일</th><th>시장</th><th>유형</th><th>상태</th><th>시도</th><th>사유</th></tr>${k.reports.concat(k.events||[]).sort((a,b)=>(b.checked_at||'').localeCompare(a.checked_at||'')).map(r=>`<tr title="${esc(r.message_text)}"><td>${esc(r.trade_date)}</td><td>${esc(r.market)}</td><td>${esc(r.report_type)}${r.subject?' '+esc(r.subject):''}<div class="small muted">확인 ${esc(r.checked_at||'-')}</div></td><td>${r.status==='SENT'?'<span class="badge b-good">발송</span>':r.status==='UNKNOWN'?'<span class="badge b-warn">불명확(재발송 안 함)</span>':r.status==='FAILED'?'<span class="badge b-bad">실패</span>':esc(r.status)}</td><td class="num">${r.attempts}</td><td class="small">${esc(r.error||'')}</td></tr>`).join('')}</table></div>`:'<div class="muted">기록 없음</div>'}`;
   el.innerHTML=h}
 async function kakaoSave(){await api('/api/settings',{method:'POST',body:JSON.stringify({kakao_enabled_KR:$('#kkr').checked?'true':'false',kakao_enabled_US:$('#kus').checked?'true':'false'})});$('#ksaved').textContent='저장됨'}
 async function kakaoTest(){const r=await api('/api/kakao/test',{method:'POST'});alert(r.message);loadKakao()}

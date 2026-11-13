@@ -65,6 +65,8 @@ public final class TestMain {
         tests.put("뉴스: 창 밖·중복·광고 제거, 언론사 평균, 출처 20 미만 미평가", NewsTests::aggregate);
         tests.put("뉴스: MSI 직접 점수·기준일 점수 없으면 미산출", NewsTests::msiDirect);
         tests.put("카카오: 토큰·보고 내용·중복 방지·불명확 미재발송·실패 재시도·미확정·토큰 갱신(모의 응답)", KakaoTests::all);
+        tests.put("보고: 일일 요약·지표 누락·거래 0건·상태 변화 알림·재실행 중복 방지·주간(데모+모의 발송)", ReportTests::dailyAndEvents);
+        tests.put("보고: 보유 종목 중대 위험은 상태가 바뀔 때만 알림", ReportTests::holdingRiskTransition);
         tests.put("이관: 체크섬 정밀도·방언 변환", MigrationTests::canonAndDialect);
         tests.put("이관: 구버전 SQLite 자동 업그레이드(스키마 v" + screener.store.Schema.latestVersion() + ")", MigrationTests::legacySqliteUpgrade);
         tests.put("이관: SQLite→MariaDB PASS·재이관 거부·원본 퇴역(MariaDB 지정 시)", MigrationTests::sqliteToMariaDb);

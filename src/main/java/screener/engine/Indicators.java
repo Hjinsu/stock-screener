@@ -105,6 +105,20 @@ public final class Indicators {
         return mx > 0 ? b.get(b.size() - 1).close() / mx - 1 : null;
     }
 
+    /** RSI(14, Wilder 평활). 표시용 — 점수에는 쓰지 않는다. 종가 n+1개 미만이면 null. */
+    public static Double rsi(List<Bar> b, int n) {
+        if (b.size() < n + 1) return null;
+        double g = 0, l = 0;
+        for (int i = 1; i <= n; i++) { double d = b.get(i).close() - b.get(i - 1).close(); if (d > 0) g += d; else l -= d; }
+        g /= n; l /= n;
+        for (int i = n + 1; i < b.size(); i++) {
+            double d = b.get(i).close() - b.get(i - 1).close();
+            g = (g * (n - 1) + Math.max(d, 0)) / n;
+            l = (l * (n - 1) + Math.max(-d, 0)) / n;
+        }
+        return l == 0 ? 100.0 : 100 - 100 / (1 + g / l);
+    }
+
     /** 이동평균. */
     public static Double sma(List<Bar> b, int n) {
         if (b.size() < n) return null;

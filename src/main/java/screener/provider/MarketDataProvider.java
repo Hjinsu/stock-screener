@@ -76,6 +76,11 @@ public interface MarketDataProvider {
 
     default String fxSourceLabel() { return "-"; }
 
+    /** 시장 변동성 지수 관측(미국 VIX, 한국 VKOSPI). 확보 실패 시 close=null 과 사유. */
+    record VolObs(String name, Double close, Double change, String date, String source, String note) { }
+
+    default VolObs volatility(LocalDate asOf) { return null; }
+
     /** 뉴스 심리 공급원(실데이터 공급자만). null 이면 미평가. */
     default screener.source.NaverNewsSource newsSource() { return null; }
 

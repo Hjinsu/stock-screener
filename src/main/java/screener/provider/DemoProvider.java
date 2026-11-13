@@ -272,6 +272,11 @@ public final class DemoProvider implements MarketDataProvider {
         return Map.of("VIX", vix, "VIX3M", vix3);
     }
 
+    @Override public VolObs volatility(LocalDate d) {
+        if (!"US".equals(market)) return null;
+        return UsLiveProvider.vixObs(sentimentSeries(d).get("VIX"), d, "데모 합성 VIX");
+    }
+
     @Override public boolean flowsSupported() { return "KR".equals(market); }
 
     @Override public Map<String, List<FlowDay>> flows(List<Security> secs, LocalDate d, int days) {

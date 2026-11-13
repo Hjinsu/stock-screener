@@ -123,6 +123,8 @@ public final class OisScorer {
         c.info.put("realizedVol20", Indicators.realizedVol(b, 20));
         c.info.put("realizedVol60", Indicators.realizedVol(b, 60));
         c.info.put("volRatio5v20", Indicators.recentVsPrior(b, 5, 20, 0));
+        c.info.put("volMultiple", b.size() > 20 ? Indicators.volMultipleAt(b, b.size() - 1, 20) : null);
+        c.info.put("rsi14", Indicators.rsi(b, 14));
         c.info.put("benchmark", ctx.provider.benchmarkKey(s));
         c.info.put("sector", s.sector);
 

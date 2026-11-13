@@ -175,6 +175,16 @@ public final class KrLiveProvider implements MarketDataProvider {
         return m;
     }
 
+    @Override public VolObs volatility(LocalDate asOf) {
+        try {
+            Double[] v = krx.vkospi(asOf);
+            if (v == null || v[0] == null) return new VolObs("VKOSPI", null, null, asOf.toString(), KrxSource.NAME, "응답에 '코스피 200 변동성지수' 없음");
+            return new VolObs("VKOSPI(코스피 200 변동성지수)", v[0], v[1], asOf.toString(), KrxSource.NAME + " 파생상품지수", null);
+        } catch (Exception e) {
+            return new VolObs("VKOSPI", null, null, asOf.toString(), KrxSource.NAME, "수집 실패: " + e.getMessage());
+        }
+    }
+
     @Override public String benchmarkKey(Security s) { return "KOSDAQ".equals(s.board) ? "KOSDAQ" : "KOSPI"; }
 
     @Override public Map<String, List<Bar>> sentimentSeries(LocalDate asOf) { return Map.of(); }
