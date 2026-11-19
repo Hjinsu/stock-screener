@@ -69,7 +69,23 @@ public final class PaperTrader {
         }
     }
 
-    public PaperTrader(Db db, MarketDataProvider p, MarketContext ctx, long runId) throws SQLException {
+    /** 실험 변형. 원본(PAPER v1.0)은 그대로 두고 1차 진입 MSI 기준만 바꾼 별도 계좌를 운용한다(다른 조건·시작금·비용 동일). */
+    public enum Variant {
+        BASE(null, VERSION, 15, VERSION_DESC),
+        EXP_MSI20("EXP20", VERSION + "-EXP20", 20, VERSION_DESC + " | 실험: 1차 진입 MSI ≤ 20(원본 ≤ 15), 그 외 동일");
+        public final String suffix, version, desc;
+        public final int stage1Msi;
+        Variant(String suffix, String version, int stage1Msi, String desc) { this.suffix = suffix; this.version = version; this.stage1Msi = stage1Msi; this.desc = desc; }
+    }
+
+    private final Variant variant;
+    private final String version;
+
+    public PaperTrader(Db db, MarketDataProvider p, MarketContext ctx, long runId) throws SQLException { this(db, p, ctx, runId, Variant.BASE); }
+
+    public PaperTrader(Db db, MarketDataProvider p, MarketContext ctx, long runId, Variant variant) throws SQLException {
+        this.variant = variant;
+        this.version = variant.version;
         this.db = db;
         this.p = p;
         this.ctx = ctx;
@@ -77,11 +93,19 @@ public final class PaperTrader {
         this.market = ctx.market;
         this.mode = p.isDemo() ? "demo" : "paper";
         this.currency = "KR".equals(market) ? "KRW" : "USD";
-        this.account = market + "-" + currency;
+        this.account = market + "-" + currency + (variant.suffix == null ? "" : "-" + variant.suffix);
         this.prm = Params.load(db, market);
         List<Bar> ix = ctx.index.getOrDefault("KR".equals(market) ? "KOSPI" : "SPX", List.of());
         this.cal = new ArrayList<>();
         for (Bar b : ix) cal.add(b.date());
+    }
+
+    /** 1차 진입 조건 재판정: round(MSI) ≤ 기준 AND 60일 고점 대비 ≤ -15%. 자료 없으면 null(판단 불가). */
+    Boolean stage1(Map<String, Object> msi, ScoreCard c) {
+        Double ms = msiScore(msi);
+        Object dd = c.info.get("drawdown60");
+        if (ms == null || !(dd instanceof Number)) return null;
+        return Math.round(ms) <= variant.stage1Msi && ((Number) dd).doubleValue() <= -0.15;
     }
 
     public static Set<String> heldOrPending(Db db, String market) throws SQLException {
@@ -111,7 +135,7 @@ public final class PaperTrader {
         Map<String, Object> a = db.query("SELECT cash FROM paper_accounts WHERE account=?", account).get(0);
         sum.put("cash", a.get("cash"));
         sum.put("account", account);
-        sum.put("strategyVersion", VERSION);
+        sum.put("strategyVersion", version);
         return sum;
     }
 
@@ -123,7 +147,7 @@ public final class PaperTrader {
             try (PreparedStatement a = db.prepare("INSERT OR IGNORE INTO paper_accounts(account, market, currency, mode, start_cash, cash, created_as_of, strategy_version) VALUES(?,?,?,?,?,?,?,?)");
                  PreparedStatement b = db.prepare("INSERT OR IGNORE INTO paper_cashflows(account, date, amount, type, note) VALUES(?,?,?,'INITIAL','가상 시작금')")) {
                 a.setString(1, account); a.setString(2, market); a.setString(3, currency); a.setString(4, mode); a.setDouble(5, prm.startCash);
-                a.setDouble(6, prm.startCash); a.setString(7, ctx.asOf.toString()); a.setString(8, VERSION);
+                a.setDouble(6, prm.startCash); a.setString(7, ctx.asOf.toString()); a.setString(8, version);
                 a.executeUpdate();
                 b.setString(1, account); b.setString(2, ctx.asOf.toString()); b.setDouble(3, prm.startCash);
                 b.executeUpdate();
@@ -349,6 +373,7 @@ public final class PaperTrader {
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> sc = (List<Map<String, Object>>) c.info.get("scenario");
             Boolean met = sc == null || sc.size() < k ? null : (Boolean) sc.get(k - 1).get("met");
+            if (k == 1 && variant.stage1Msi != 15 && sc != null && !sc.isEmpty()) met = stage1(msi, c); // 실험: 1차 MSI 기준만 변경(낙폭 -15% 조건은 동일)
             if (Boolean.FALSE.equals(met)) continue; // 단계 조건이 이미 미충족으로 판정되면 주문 대상이 아니므로 보류도 기록하지 않음
             if (met == null) why.add(k + "차 진입 조건 판단 불가(" + (sc == null ? "시나리오 없음" : sc.get(k - 1).get("observed")) + ")");
             String action = "BUY_STAGE" + k;
@@ -358,7 +383,8 @@ public final class PaperTrader {
                 continue;
             }
             if (!met) continue; // 조건 미충족: 신호 없음
-            String reason = k + "차(" + Math.round(STAGE_W[k - 1] * 100) + "%) 조건 충족: " + sc.get(k - 1).get("condition") + " — " + sc.get(k - 1).get("observed")
+            String cond = k == 1 && variant.stage1Msi != 15 ? "극단적 공포(실험: MSI ≤ " + variant.stage1Msi + ") 및 우량주 급락 확인" : String.valueOf(sc.get(k - 1).get("condition"));
+            String reason = k + "차(" + Math.round(STAGE_W[k - 1] * 100) + "%) 조건 충족: " + cond + " — " + sc.get(k - 1).get("observed")
                     + "; OIS " + c.S() + "/" + c.W() + " " + c.statusLabel + "; " + c.info.get("declineType");
             Long sid = signal(c, msi, "BUY", action, k, "ORDER", reason, planned, null);
             if (sid != null && order(sid, c, "BUY", action, k, planned, null)) orders++;
@@ -415,7 +441,7 @@ public final class PaperTrader {
 
     /** 신호 저장(신호 시점 데이터 스냅샷). 같은 신호키가 이미 있으면 null. */
     private Long signal(ScoreCard c, Map<String, Object> msi, String side, String action, Integer stage, String decision, String reason, Double planned, Double plannedQty) throws Exception {
-        String key = String.join("|", mode, VERSION, market, c.symbol, ctx.asOf.toString(), action);
+        String key = String.join("|", mode, version, market, c.symbol, ctx.asOf.toString(), action);
         if (db.count("SELECT COUNT(*) FROM paper_signals WHERE signal_key=?", key) > 0) return null;
         List<Bar> b = ctx.bars.getOrDefault(c.symbol, List.of());
         Security s = ctx.secs.get(c.symbol);
@@ -460,9 +486,10 @@ public final class PaperTrader {
         synchronized (db) {
             try (PreparedStatement ps = db.prepare(sql, java.sql.Statement.RETURN_GENERATED_KEYS)) {
                 int i = 1;
-                ps.setString(i++, key); ps.setLong(i++, runId); ps.setString(i++, mode); ps.setString(i++, VERSION);
+                ps.setString(i++, key); ps.setLong(i++, runId); ps.setString(i++, mode); ps.setString(i++, version);
                 Map<String, Object> pm = prm.toMap();
-                pm.put("versionDesc", VERSION_DESC);
+                pm.put("versionDesc", variant.desc);
+                pm.put("stage1Msi", variant.stage1Msi);
                 ps.setString(i++, Json.write(pm));
                 ps.setString(i++, market); ps.setString(i++, account); ps.setString(i++, c.symbol); ps.setString(i++, c.name); ps.setString(i++, ctx.asOf.toString());
                 ps.setString(i++, side); ps.setString(i++, action); ps.setObject(i++, stage); ps.setString(i++, decision); ps.setString(i++, reason);
@@ -485,7 +512,7 @@ public final class PaperTrader {
         try (PreparedStatement ps = db.prepare("INSERT OR IGNORE INTO paper_orders(signal_id, run_id, mode, strategy_version, account, market, symbol, name, side, stage, action," +
                 " planned_amount, planned_qty, status, signal_date, target_date, status_reason, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'PENDING',?,?,?,?,?)")) {
             int i = 1;
-            ps.setLong(i++, sid); ps.setLong(i++, runId); ps.setString(i++, mode); ps.setString(i++, VERSION); ps.setString(i++, account); ps.setString(i++, market);
+            ps.setLong(i++, sid); ps.setLong(i++, runId); ps.setString(i++, mode); ps.setString(i++, version); ps.setString(i++, account); ps.setString(i++, market);
             ps.setString(i++, c.symbol); ps.setString(i++, c.name); ps.setString(i++, side); ps.setObject(i++, stage); ps.setString(i++, action);
             setD(ps, i++, planned); setD(ps, i++, plannedQty); ps.setString(i++, ctx.asOf.toString()); ps.setString(i++, t == null ? null : t.toString());
             ps.setString(i++, "다음 거래일 시가 체결 대기" + (t == null ? "(다음 거래일 미확정)" : "")); ps.setString(i++, now); ps.setString(i++, now);
@@ -591,13 +618,13 @@ public final class PaperTrader {
             add(groups, "유동성(계획수량/20일 평균거래량)|" + (liq == null ? "결측" : liq < 0.0001 ? "< 0.01%" : liq < 0.001 ? "0.01~0.1%" : "≥ 0.1%"), r);
         }
         try (PreparedStatement del = db.prepare("DELETE FROM paper_performance WHERE as_of=? AND market=? AND strategy_version=?")) {
-            del.setString(1, ctx.asOf.toString()); del.setString(2, market); del.setString(3, VERSION); del.executeUpdate();
+            del.setString(1, ctx.asOf.toString()); del.setString(2, market); del.setString(3, version); del.executeUpdate();
         }
         for (Map.Entry<String, List<Double>> e : groups.entrySet()) {
             String[] k = e.getKey().split("\\|", 2);
             List<Double> v = e.getValue();
             try (PreparedStatement ps = db.prepare("INSERT OR REPLACE INTO paper_performance(as_of, market, strategy_version, dimension, bucket, n, mean_net_ret, median_net_ret, win_rate, note) VALUES(?,?,?,?,?,?,?,?,?,?)")) {
-                ps.setString(1, ctx.asOf.toString()); ps.setString(2, market); ps.setString(3, VERSION); ps.setString(4, k[0]); ps.setString(5, k[1]);
+                ps.setString(1, ctx.asOf.toString()); ps.setString(2, market); ps.setString(3, version); ps.setString(4, k[0]); ps.setString(5, k[1]);
                 ps.setInt(6, v.size()); ps.setDouble(7, Num.mean(v)); ps.setDouble(8, Num.median(v));
                 ps.setDouble(9, v.stream().filter(x -> x > 0).count() / (double) v.size());
                 ps.setString(10, "매수 체결별 최신 종가 평가(매도 비용 가정 차감, 사후). 표본 " + v.size() + "건" + (v.size() < 30 ? " — 30건 미만, 해석 주의" : ""));

@@ -61,6 +61,7 @@ public final class TestMain {
         tests.put("모의: 필수 데이터 부족 → 보류 사유 저장", PaperTests::deferOnMissingData);
         tests.put("모의: 손익 계산(+10% 1/3 청산, 실현손익, 평가 항등식)", PaperTests::pnl);
         tests.put("모의: KRX 시가 0(거래정지) → 미확인", PaperTests::krSuspendedOpen);
+        tests.put("모의: 실험 계좌(1차 MSI ≤ 20) 분리·조건 동일", PaperTests::experimentAccount);
         tests.put("뉴스: 7단계 분류·광고·복제 판정", NewsTests::classify);
         tests.put("뉴스: 창 밖·중복·광고 제거, 언론사 평균, 출처 20 미만 미평가", NewsTests::aggregate);
         tests.put("뉴스: MSI 직접 점수·기준일 점수 없으면 미산출", NewsTests::msiDirect);

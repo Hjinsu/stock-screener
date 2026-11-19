@@ -232,6 +232,32 @@ final class PaperTests {
         }
     }
 
+    /** 실험 계좌(EXP20): 1차 MSI 기준만 20 이하. 원본 계좌와 분리(계좌·현금·전략 버전·신호 키). */
+    static void experimentAccount() throws Exception {
+        try (Db db = db()) {
+            List<LocalDate> ds = days(30);
+            List<Bar> stock = flat(ds, 100), idx = flat(ds, 5000);
+            DemoProvider p = new DemoProvider("US");
+            LocalDate d = ds.get(29);
+            ScoreCard c = card("US", "EEE", true, false); // OIS 시나리오(원본 15 기준) 1차 미충족
+            c.info.put("drawdown60", -0.20);
+            new PaperTrader(db, p, ctx(p, "US", stock, idx, d, "EEE"), 1).run(Map.of("EEE", c), msi(d.toString(), 18));
+            new PaperTrader(db, p, ctx(p, "US", stock, idx, d, "EEE"), 1, PaperTrader.Variant.EXP_MSI20).run(Map.of("EEE", c), msi(d.toString(), 18));
+            TestMain.eq(db.count("SELECT COUNT(*) FROM paper_orders WHERE account='US-USD'"), 0, "원본: MSI 18 > 15 → 주문 없음");
+            TestMain.eq(db.count("SELECT COUNT(*) FROM paper_orders WHERE account='US-USD-EXP20' AND strategy_version='PAPER v1.0-EXP20'"), 1, "실험: MSI 18 ≤ 20 → 1차 주문");
+            TestMain.eq(db.count("SELECT COUNT(*) FROM paper_accounts WHERE start_cash=100000"), 2, "두 계좌 같은 시작금");
+            TestMain.check(((String) db.query("SELECT params_json FROM paper_signals WHERE account='US-USD-EXP20'").get(0).get("params_json")).contains("\"stage1Msi\":20"), "실험 기준 기록");
+            ScoreCard c2 = card("US", "FFF", true, false);
+            c2.info.put("drawdown60", -0.20);
+            LocalDate d2 = ds.get(28);
+            new PaperTrader(db, p, ctx(p, "US", stock, idx, d2, "FFF"), 2, PaperTrader.Variant.EXP_MSI20).run(Map.of("FFF", c2), msi(d2.toString(), 22));
+            TestMain.eq(db.count("SELECT COUNT(*) FROM paper_orders WHERE account='US-USD-EXP20' AND symbol='FFF'"), 0, "실험: MSI 22 > 20 → 주문 없음");
+            c2.info.put("drawdown60", -0.10);
+            new PaperTrader(db, p, ctx(p, "US", stock, idx, d2, "FFF"), 3, PaperTrader.Variant.EXP_MSI20).run(Map.of("FFF", c2), msi(d2.toString(), 12));
+            TestMain.eq(db.count("SELECT COUNT(*) FROM paper_orders WHERE account='US-USD-EXP20' AND symbol='FFF'"), 0, "실험: 낙폭 -10%(미달) → 주문 없음(다른 조건 동일)");
+        }
+    }
+
     /** 한국: KRX 원자료 시가 0(거래정지·무거래) → 미체결. 체결일 거래량 등 시가 이후 정보는 판정에 쓰지 않음. */
     static void krSuspendedOpen() throws Exception {
         Path h = Files.createTempDirectory("paper-kr");

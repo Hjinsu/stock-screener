@@ -128,7 +128,7 @@ public final class DashboardServer {
                 case "/api/tracking": json(ex, tracking(q.getOrDefault("market", "KR"), q.getOrDefault("model", "MAS"))); return;
                 case "/api/transitions": json(ex, db.query("SELECT * FROM transitions WHERE market=? ORDER BY as_of DESC, id DESC LIMIT 200", q.getOrDefault("market", "KR"))); return;
                 case "/api/msi": json(ex, msi(q.getOrDefault("market", "KR"))); return;
-                case "/api/paper": json(ex, paper(q.getOrDefault("market", "KR"))); return;
+                case "/api/paper": json(ex, paper(q.getOrDefault("market", "KR"), q.get("account"))); return;
                 case "/api/paper/csv": {
                     String t = q.getOrDefault("table", "paper_fills");
                     if (!t.matches("[a-z_]+")) { send(ex, 400, "text/plain", "bad table"); return; }
@@ -307,9 +307,34 @@ public final class DashboardServer {
         PAPER_KEYS.put("paper_slip_bps_US", new String[]{"5", "미국 슬리피지(bp)"});
     }
 
-    private Map<String, Object> paper(String market) throws Exception {
-        String acc = market + "-" + ("KR".equals(market) ? "KRW" : "USD");
+    private Map<String, Object> paper(String market, String account) throws Exception {
+        String base = market + "-" + ("KR".equals(market) ? "KRW" : "USD");
+        String acc = account != null && account.startsWith(base) && account.matches("[A-Z0-9-]{1,16}") ? account : base;
         Map<String, Object> m = new LinkedHashMap<>();
+        // 원본·실험 계좌 비교(실험 계좌 생성일 이후 같은 기간)
+        List<Map<String, Object>> cmp = new ArrayList<>();
+        List<Map<String, Object>> exp = db.query("SELECT created_as_of FROM paper_accounts WHERE account=?", base + "-EXP20");
+        String since = exp.isEmpty() ? null : (String) exp.get(0).get("created_as_of");
+        for (String a : new String[]{base, base + "-EXP20"}) {
+            List<Map<String, Object>> ac = db.query("SELECT account, strategy_version, created_as_of FROM paper_accounts WHERE account=?", a);
+            if (ac.isEmpty()) continue;
+            Map<String, Object> r = new LinkedHashMap<>(ac.get(0));
+            String s = since != null ? since : (String) ac.get(0).get("created_as_of");
+            List<Map<String, Object>> e0 = db.query("SELECT date, equity FROM paper_equity_daily WHERE account=? AND date>=? ORDER BY date LIMIT 1", a, s);
+            List<Map<String, Object>> e1 = db.query("SELECT date, equity, realized_cum, unrealized FROM paper_equity_daily WHERE account=? ORDER BY date DESC LIMIT 1", a);
+            r.put("since", s);
+            if (!e0.isEmpty() && !e1.isEmpty()) {
+                double a0 = ((Number) e0.get(0).get("equity")).doubleValue(), a1 = ((Number) e1.get(0).get("equity")).doubleValue();
+                r.put("lastDate", e1.get(0).get("date")); r.put("equity", a1); r.put("retSince", a1 / a0 - 1);
+                r.put("realized", e1.get(0).get("realized_cum")); r.put("unrealized", e1.get(0).get("unrealized"));
+            }
+            r.put("buys", db.count("SELECT COUNT(*) FROM paper_fills WHERE account=? AND side='BUY' AND fill_date>=?", a, s));
+            r.put("sells", db.count("SELECT COUNT(*) FROM paper_fills WHERE account=? AND side='SELL' AND fill_date>=?", a, s));
+            r.put("positions", db.count("SELECT COUNT(*) FROM paper_positions WHERE account=? AND qty>0", a));
+            cmp.add(r);
+        }
+        m.put("compare", cmp);
+        m.put("selected", acc);
         List<Map<String, Object>> a = db.query("SELECT * FROM paper_accounts WHERE account=?", acc);
         m.put("account", a.isEmpty() ? null : a.get(0));
         List<Map<String, Object>> eq = db.query("SELECT * FROM paper_equity_daily WHERE account=? ORDER BY date", acc);

@@ -75,6 +75,17 @@ final class ReportTests {
             long before = mock.sends();
             for (int k = 0; k < 2; k++) { Pipeline pl = new Pipeline(p, db, cfg); pl.kakaoTx = mock; pl.run(); }
             TestMain.eq(mock.sends(), before, "재실행 시 추가 발송 없음");
+            // 단계별 집계(funnel): 원본·실험 계좌, 단계 통과 수 단조 감소
+            String fn = screener.report.Funnel.build(db, "KR", 10);
+            TestMain.check(fn.contains("■ 원본 계좌(1차 MSI ≤ 15)") && fn.contains("■ 실험 계좌(1차 MSI ≤ 20)") && fn.contains("재무 검증") && fn.contains("자금 한도"), "funnel 출력");
+            int prev = Integer.MAX_VALUE;
+            for (String line : fn.split("\n")) {
+                if (line.contains("■ 실험")) break;
+                if (!line.matches("^(가격|재무|OIS|MSI|1차).*")) continue;
+                int pass = Integer.parseInt(line.substring(28).trim().split("\\s+")[0]);
+                TestMain.check(pass <= prev, "단계 통과 수 감소: " + line);
+                prev = pass;
+            }
             // 주간 보고: 저장·1회 발송
             KakaoReporter k = new KakaoReporter(cfg, db, mock);
             LocalDate last = cal.get(DemoProvider.DAYS - 1);

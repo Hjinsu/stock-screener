@@ -68,6 +68,13 @@ public final class App {
                 Thread.currentThread().join();
                 break;
             }
+            case "funnel": {
+                int days = Integer.parseInt(opt(args, "--days", "10"));
+                try (Db db = Db.open(cfg)) {
+                    for (String mk : market.equals("ALL") ? new String[]{"KR", "US"} : new String[]{market}) System.out.println(screener.report.Funnel.build(db, mk, days));
+                }
+                break;
+            }
             case "db-migrate": {
                 try (Db db = Db.open(cfg)) {
                     System.out.println("DB: " + db.describe());
@@ -148,7 +155,7 @@ public final class App {
                 break;
             }
             default:
-                System.out.println("사용법:\n  run  [--market KR|US|ALL] [--limit N]\n  demo [--days 70]\n  serve [--demo] [--port 8765]\n  export-csv [--demo] [--out 폴더]\n  db-status | db-migrate\n  migrate-sqlite --from <SQLite 파일> [--retire-source]\n  sqlite-snapshot --out <파일>  |  retire-local [--undo]\n  check-sources");
+                System.out.println("사용법:\n  run  [--market KR|US|ALL] [--limit N]\n  demo [--days 70]\n  serve [--demo] [--port 8765]\n  export-csv [--demo] [--out 폴더]\n  db-status | db-migrate\n  funnel [--market KR|US|ALL] [--days 10]\n  migrate-sqlite --from <SQLite 파일> [--retire-source]\n  sqlite-snapshot --out <파일>  |  retire-local [--undo]\n  check-sources");
         }
     }
 

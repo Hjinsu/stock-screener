@@ -312,6 +312,16 @@ public final class Pipeline {
                 Map<String, Object> ps = new PaperTrader(db, p, ctx, runId).run(oisCards, msi);
                 sum.put("paper", ps);
                 PaperTrader.logSummary(m, ps);
+                // 실험 계좌(1차 진입 MSI ≤ 20, 그 외 동일). 원본 계좌와 독립 — 실패해도 원본 결과 유지
+                if ("true".equals(db.setting("paper_exp20_enabled", "true"))) {
+                    try {
+                        Map<String, Object> pe = new PaperTrader(db, p, ctx, runId, PaperTrader.Variant.EXP_MSI20).run(oisCards, msi);
+                        sum.put("paperExp20", pe);
+                        PaperTrader.logSummary(m + "-EXP20", pe);
+                    } catch (Exception e) {
+                        notes.add("실험 계좌 처리 실패(원본 무관): " + Log.redact(String.valueOf(e)));
+                    }
+                }
             } catch (Exception e) {
                 sum.put("paper", Map.of("error", Log.redact(String.valueOf(e))));
                 notes.add("모의매매 처리 실패: " + Log.redact(String.valueOf(e)));

@@ -242,8 +242,9 @@ async function tracking(){const model=state.model||'MAS';const list=await api(`/
   h+='</table></div>';$('#main').innerHTML=h}
 
 
-async function paper(){const d=await api('/api/paper?market='+state.market);const m=state.market;const a=d.account;
+async function paper(){const d=await api('/api/paper?market='+state.market+(state.paperAcc&&state.paperAcc.startsWith(state.market)?'&account='+state.paperAcc:''));const m=state.market;const a=d.account;
   let h=`<div class="toolbar">${marketSeg()}<span class="muted small">역발상(OIS) 후보 기반 가상 계좌 — 실거래 연결 없음. 확정장 신호 → 다음 거래일 시가 모의 체결.</span></div>
+  ${(d.compare||[]).length?`<div class="card" style="margin-bottom:12px"><h2>원본·실험 계좌 비교 <span class="small muted">(실험 계좌 생성일 이후 같은 기간)</span></h2><div class="tbl-wrap"><table><tr><th>계좌</th><th>전략</th><th>기준 시작일</th><th class="num">총자산</th><th class="num">기간 수익률</th><th class="num">실현</th><th class="num">미실현</th><th class="num">매수·매도</th><th class="num">보유</th><th></th></tr>${d.compare.map(r=>`<tr><td>${esc(r.account)}</td><td class="small">${esc(r.strategy_version)}</td><td>${esc(r.since)}</td><td class="num">${money(m,r.equity)}</td><td class="num">${pct(r.retSince)}</td><td class="num">${money(m,r.realized)}</td><td class="num">${money(m,r.unrealized)}</td><td class="num">${r.buys}·${r.sells}</td><td class="num">${r.positions}</td><td><button class="act" onclick="state.paperAcc='${esc(r.account)}';render()">${d.selected===r.account?'보는 중':'보기'}</button></td></tr>`).join('')}</table></div><p class="small muted">실험(EXP20): 1차 진입 MSI 기준만 15 이하 → 20 이하. 가상 시작금·비용·다른 조건 동일. 카카오 보고는 원본 계좌 기준.</p></div>`:''}
   <div class="notice small">${esc(d.liquidityAssumption)}. 체결일 전체 거래량은 사후 분석용이며 체결 판정에 쓰지 않습니다. 동시호가 체결량·호가·분봉은 무료 공급원 미제공으로 결측입니다.</div>`;
   if(!a){$('#main').innerHTML=h+'<div class="card empty">아직 모의 계좌가 없습니다(첫 실행 시 생성).</div>';return}
   const eq=d.equity||[];const last=eq[eq.length-1]||{};const ret=last.equity&&a.start_cash?last.equity/last.deposits_cum-1:null;
